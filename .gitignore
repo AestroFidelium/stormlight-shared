@@ -1,0 +1,52 @@
+# Public engine repo — NO assets ever, no build artifacts.
+
+# ── Rust / Cargo ──
+/target
+**/target
+**/*.rs.bk
+*.pdb
+
+# ── Nix / direnv ──
+.direnv/
+.envrc.local
+result
+result-*
+
+# ── Editor / OS ──
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# ── Profiling / coverage ──
+flamegraph.svg
+perf.data*
+*.profraw
+*.profdata
+/coverage
+heaptrack.*
+
+# ── ASSETS: forbidden in engine repos. Belt-and-suspenders refusal. ──
+**/assets/
+*.glb
+*.gltf
+*.bin
+*.png
+*.jpg
+*.jpeg
+*.ktx2
+*.basis
+*.dds
+*.hdr
+*.exr
+*.wav
+*.ogg
+*.mp3
+*.flac
+*.mp4
+*.webm
+*.ttf
+*.otf
+*.woff
+*.woff2
+*.wasm

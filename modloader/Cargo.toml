@@ -1,0 +1,42 @@
+[package]
+name = "stormlight_modloader"
+description = "Engine-side WASM mod host: wasmtime runtime + host ABI that loads mods and runs mod_register / mod_tick / triggers. Used by both server and client."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+name = "stormlight_modloader"
+
+[[bin]]
+name = "modload"
+path = "src/bin/modload.rs"
+
+[dependencies]
+# default-features off drops async (+ wasmtime-fiber asm). Sync host calls only.
+wasmtime = { workspace = true, features = ["cranelift", "runtime", "std"] }
+anyhow = { workspace = true }
+zip = { workspace = true }
+stormlight_mod_abi = { workspace = true, features = ["std", "manifest-parse"] }
+
+[dev-dependencies]
+tempfile = "3"
+wat = "1"
+bolero = { workspace = true }
+
+[[test]]
+name = "property"
+path = "tests/property/main.rs"
+[[test]]
+name = "fuzz"
+path = "tests/fuzz/main.rs"
+[[test]]
+name = "integration"
+path = "tests/integration/main.rs"
+[[test]]
+name = "systems"
+path = "tests/systems/main.rs"

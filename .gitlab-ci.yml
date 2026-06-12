@@ -1,0 +1,32 @@
+# GitLab CI — engine repo (fmt, clippy, nextest). Bevy builds are cached on
+# Cargo.lock. Server/client add release + Windows-cross jobs on top of this.
+stages:
+  - check
+  - test
+
+variables:
+  CARGO_HOME: "$CI_PROJECT_DIR/.cargo-home"
+  CARGO_TERM_COLOR: "always"
+
+.cargo_cache: &cargo_cache
+  cache:
+    key:
+      files: [Cargo.lock]
+    paths:
+      - .cargo-home/
+      - target/
+
+fmt:
+  stage: check
+  <<: *cargo_cache
+  script: [cargo fmt --all --check]
+
+clippy:
+  stage: check
+  <<: *cargo_cache
+  script: [cargo clippy --all-targets]
+
+nextest:
+  stage: test
+  <<: *cargo_cache
+  script: [cargo nextest run --no-fail-fast]
