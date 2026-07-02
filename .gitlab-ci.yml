@@ -1,13 +1,25 @@
-# GitLab CI — engine repo (fmt, clippy, nextest). Bevy builds are cached on
-# Cargo.lock. Server/client add release + Windows-cross jobs on top of this.
+# GitLab CI — engine repo. Runs entirely inside this repo's Nix flake dev shell
+# (`flake.nix` provides cargo + clippy + rustfmt + nextest + every Bevy system
+# lib), so the toolchain matches local dev exactly. `RUSTFLAGS=-D warnings`
+# enforces the project's zero-warning policy; dependency warnings are capped to
+# `allow` by cargo, so only our own crates can fail it.
 stages:
   - check
   - test
 
+default:
+  image: nixos/nix:latest
+
 variables:
   CARGO_HOME: "$CI_PROJECT_DIR/.cargo-home"
   CARGO_TERM_COLOR: "always"
+  RUSTFLAGS: "-D warnings"
+  # Flakes are not on by default in the nixos/nix image.
+  NIX_CONFIG: "experimental-features = nix-command flakes"
 
+# Cache the cargo registry + build artifacts on Cargo.lock. (The Nix store
+# itself is restored from cache.nixos.org each run; a leaner CI dev shell is a
+# future optimization.)
 .cargo_cache: &cargo_cache
   cache:
     key:
@@ -19,14 +31,17 @@ variables:
 fmt:
   stage: check
   <<: *cargo_cache
-  script: [cargo fmt --all --check]
+  script:
+    - nix develop --command cargo fmt --all --check
 
 clippy:
   stage: check
   <<: *cargo_cache
-  script: [cargo clippy --all-targets]
+  script:
+    - nix develop --command cargo clippy --all-targets -- -D warnings
 
 nextest:
   stage: test
   <<: *cargo_cache
-  script: [cargo nextest run --no-fail-fast]
+  script:
+    - nix develop --command cargo nextest run --no-fail-fast

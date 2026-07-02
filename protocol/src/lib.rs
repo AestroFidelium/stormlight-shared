@@ -8,6 +8,7 @@
 pub mod balance;
 pub mod connection;
 pub mod protocol;
+pub mod stress;
 
 // `#[macro_export]` puts the macros at the crate root; the module still has to
 // be declared so the file is compiled.
