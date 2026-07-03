@@ -28,6 +28,26 @@ variables:
       - .cargo-home/
       - target/
 
+# `modloader` depends on `stormlight_mod_abi` via the relative path dep
+# `../sdk/schema`, so any cargo command that resolves the graph (clippy,
+# nextest) needs the `sdk` repo checked out next to this one — CI does not do
+# that by default. Clone it with CI_JOB_TOKEN (this project must be on sdk's
+# CI/CD job-token allowlist). Match the current branch when sdk has it, else
+# fall back to main, so a coordinated cross-repo change builds against its own
+# branch. `fmt` runs `cargo metadata --no-deps` and never reads the dependency
+# manifest, so it stays independent.
+.clone_siblings: &clone_siblings
+  - |
+    clone_sibling() {
+      name="$1"
+      url="https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_NAMESPACE}/${name}.git"
+      ref="$CI_COMMIT_REF_NAME"
+      git ls-remote --exit-code --heads "$url" "$ref" >/dev/null 2>&1 || ref="main"
+      echo "cloning sibling ${name}@${ref}"
+      git clone --depth 1 --branch "$ref" "$url" "../${name}"
+    }
+    clone_sibling sdk
+
 fmt:
   stage: check
   <<: *cargo_cache
@@ -37,11 +57,13 @@ fmt:
 clippy:
   stage: check
   <<: *cargo_cache
+  before_script: *clone_siblings
   script:
     - nix develop --command cargo clippy --all-targets -- -D warnings
 
 nextest:
   stage: test
   <<: *cargo_cache
+  before_script: *clone_siblings
   script:
     - nix develop --command cargo nextest run --no-fail-fast
