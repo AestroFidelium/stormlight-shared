@@ -4,6 +4,7 @@
 pub use crate::easy_components;
 pub use crate::easy_resources;
 
-// Re-export the protocol + balance surface as it lands.
-pub use crate::balance::*;
+// Re-export the protocol surface as it lands. (`balance` is re-exported here
+// once it has public items; an empty glob would warn.)
 pub use crate::connection::*;
+pub use crate::protocol::ProtocolPlugin;
