@@ -13,7 +13,11 @@ license = "MIT OR Apache-2.0"
 repository = "https://gitlab.com/stormlight/shared"
 
 [workspace.dependencies]
-bevy = "0.18.1"
+# Wire protocol + host are headless: no rendering. Default features pull the
+# full graphics stack, and because the server unifies features across the dep
+# graph, that dragged `bevy_render`/winit/wgpu into the dedicated server too.
+# Members opt into the non-render features they need (e.g. `serialize`).
+bevy = { version = "0.18.1", default-features = false }
 lightyear = "=0.26.4"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_yaml = "0.9.34"
