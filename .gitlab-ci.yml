@@ -53,7 +53,11 @@ fmt:
   <<: *cargo_cache
   before_script: *clone_siblings
   script:
-    - nix develop --command cargo fmt --all --check
+    # Scope to this repo's crates, not `--all`: `--all` also reformats local
+    # path-based dependencies, i.e. the `sdk` sibling, so shared's fmt would
+    # fail on sdk's formatting — sdk owns that via its own CI. (Siblings are
+    # still cloned above because `cargo metadata` reads the path-dep manifest.)
+    - nix develop --command cargo fmt --check -p stormlight_shared -p stormlight_modloader
 
 clippy:
   stage: check
