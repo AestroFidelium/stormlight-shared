@@ -29,13 +29,13 @@ variables:
       - target/
 
 # `modloader` depends on `stormlight_mod_abi` via the relative path dep
-# `../sdk/schema`, so any cargo command that resolves the graph (clippy,
-# nextest) needs the `sdk` repo checked out next to this one — CI does not do
-# that by default. Clone it with CI_JOB_TOKEN (this project must be on sdk's
-# CI/CD job-token allowlist). Match the current branch when sdk has it, else
-# fall back to main, so a coordinated cross-repo change builds against its own
-# branch. `fmt` runs `cargo metadata --no-deps` and never reads the dependency
-# manifest, so it stays independent.
+# `../sdk/schema`, so any cargo command needs the `sdk` repo checked out next
+# to this one — CI does not do that by default. This includes `cargo fmt --all`,
+# which resolves the graph via `cargo metadata` (not `--no-deps`) and dies at
+# manifest load without it. Clone it with CI_JOB_TOKEN (this project must be on
+# sdk's CI/CD job-token allowlist). Match the current branch when sdk has it,
+# else fall back to main, so a coordinated cross-repo change builds against its
+# own branch.
 .clone_siblings: &clone_siblings
   - |
     clone_sibling() {
@@ -51,6 +51,7 @@ variables:
 fmt:
   stage: check
   <<: *cargo_cache
+  before_script: *clone_siblings
   script:
     - nix develop --command cargo fmt --all --check
 
