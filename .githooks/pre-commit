@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Stormlight pre-commit gate — clippy must be clean before a commit lands, so a
+# warning can never be "overlooked" into history again. Wired by the flake dev
+# shell via `core.hooksPath = .githooks`; versioned so every clone gets it.
+#
+# Runs the blessed lint (`cargo lint` = clippy --all-targets) with warnings
+# promoted to errors. Bypass for an intentional WIP checkpoint with:
+#   git commit --no-verify
+set -euo pipefail
+
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "pre-commit: cargo not found — enter the dev shell (direnv allow) and retry," >&2
+  echo "           or skip this gate with 'git commit --no-verify'." >&2
+  exit 1
+fi
+
+echo "pre-commit: clippy gate (cargo lint -- -D warnings)…"
+if ! cargo lint -- -D warnings; then
+  echo "pre-commit: clippy is not clean — fix the warnings above (or --no-verify)." >&2
+  exit 1
+fi

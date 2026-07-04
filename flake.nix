@@ -124,6 +124,13 @@
           shellHook = ''
             echo "🌩  Stormlight dev shell — Rust $(rustc --version | cut -d' ' -f2) + mold (LLVM backend; fuzz/cov friendly)"
             echo "    engine: cargo t   ·   lint: cargo lint   ·   mods: (cd mods && cargo build --target wasm32-unknown-unknown --release)"
+
+            # Point git at the versioned hooks dir so the clippy pre-commit gate
+            # runs on every commit (bypass a WIP checkpoint with --no-verify).
+            # Idempotent; safe to re-run on each shell entry.
+            if git rev-parse --git-dir >/dev/null 2>&1; then
+              git config --local core.hooksPath .githooks
+            fi
           '';
         };
       }
