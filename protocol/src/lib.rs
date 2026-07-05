@@ -7,6 +7,7 @@
 
 pub mod balance;
 pub mod connection;
+pub mod projectiles;
 pub mod protocol;
 pub mod stress;
 
