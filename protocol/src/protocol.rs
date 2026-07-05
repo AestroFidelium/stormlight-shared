@@ -2,10 +2,11 @@
 //! [`ProtocolPlugin`] during bootstrap so they agree on exactly which
 //! components replicate and how they are (de)serialized.
 //!
-//! Milestone 1 registers a single component: Bevy's [`Transform`]. The
-//! `bevy/serialize` feature makes it `Serialize`/`Deserialize`, so server
-//! mutations ship to every client that can see the entity — no wrapper
-//! components, no hand-written sync systems.
+//! The one per-tick component is Bevy's [`Transform`], registered with a custom
+//! quantized codec ([`crate::quantize`]) so a mover's position/rotation/scale
+//! ships as a compact 22-byte frame rather than the raw `f32×10`
+//! (stormlight/server#10). Server mutations ship to every client that can see
+//! the entity — no wrapper components, no hand-written sync systems.
 //!
 //! Transform is registered **with interpolation**: an entity spawned with an
 //! `InterpolationTarget` is mirrored on the client as a smooth `Interpolated`
@@ -24,10 +25,12 @@ pub struct ProtocolPlugin;
 
 impl Plugin for ProtocolPlugin {
     fn build(&self, app: &mut App) {
-        // Bevy's Transform replicated directly (enabled by `bevy/serialize`).
-        // The `Replicate` / `InterpolationTarget` bundle at spawn time decides,
+        // Transform replicated through the compact quantized codec
+        // (stormlight/server#10) instead of the raw `bevy/serialize` bincode
+        // form: a fixed 22-byte frame per mover per tick instead of ~40. The
+        // `Replicate` / `InterpolationTarget` bundle at spawn time still decides,
         // per entity, who receives it and whether it is interpolated.
-        app.register_component::<Transform>()
+        app.register_component_custom_serde::<Transform>(crate::quantize::serialize_fns())
             .add_interpolation_with(crate::connection::lerp_transform);
 
         // Representative per-unit state components, registered on both ends so

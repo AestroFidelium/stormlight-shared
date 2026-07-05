@@ -1,8 +1,8 @@
 //! The wire format — single source of truth, shared verbatim by server and
-//! client. Milestone 1 (player connection) keeps this deliberately tiny: the
-//! only state on the wire is Bevy's own [`Transform`], replicated directly via
-//! the `bevy/serialize` feature (see [`crate::protocol`]). No game content —
-//! the engine replicates generic ECS state, nothing hero- or map-specific.
+//! client. The only per-tick state on the wire is Bevy's own [`Transform`],
+//! replicated through the compact quantized codec in [`crate::quantize`] (see
+//! [`crate::protocol`]). No game content — the engine replicates generic ECS
+//! state, nothing hero- or map-specific.
 
 use bevy::prelude::*;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -10,7 +10,7 @@ use std::time::Duration;
 
 /// Netcode protocol id. Server and client must agree byte-for-byte or the
 /// handshake is rejected; bump it on any breaking wire change.
-pub const PROTOCOL_ID: u64 = 0x5701_0000_0000_0001;
+pub const PROTOCOL_ID: u64 = 0x5701_0000_0000_0002;
 
 /// Default listen / connect port for local development.
 pub const SERVER_PORT: u16 = 5000;

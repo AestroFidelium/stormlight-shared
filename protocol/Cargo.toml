@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 bevy = { workspace = true, features = ["serialize"] }
 lightyear = { workspace = true, features = ["netcode", "udp", "input_native", "crossbeam"] }
+lightyear_serde = { workspace = true }
 serde = { workspace = true }
 serde_yaml = { workspace = true }
 anyhow = { workspace = true }

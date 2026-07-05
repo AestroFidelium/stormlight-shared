@@ -18,6 +18,9 @@ result-*
 *.swp
 .DS_Store
 
+# ── Fuzzing (bolero libfuzzer corpus / crashes) ──
+**/__fuzz__/
+
 # ── Profiling / coverage ──
 flamegraph.svg
 perf.data*
