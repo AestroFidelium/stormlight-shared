@@ -6113,6 +6113,7 @@ dependencies = [
  "derive_more",
  "divan",
  "lightyear",
+ "lightyear_serde",
  "regex",
  "serde",
  "serde_yaml",

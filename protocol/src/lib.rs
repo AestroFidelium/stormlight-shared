@@ -9,6 +9,7 @@ pub mod balance;
 pub mod connection;
 pub mod projectiles;
 pub mod protocol;
+pub mod quantize;
 pub mod stress;
 
 // `#[macro_export]` puts the macros at the crate root; the module still has to
