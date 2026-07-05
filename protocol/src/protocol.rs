@@ -35,5 +35,10 @@ impl Plugin for ProtocolPlugin {
         // lone Transform (stormlight/server#1). Registration is free until an
         // entity carries them; the demo attaches them behind `STRESS_RICH`.
         crate::stress::register(app);
+
+        // Event-driven projectiles (stormlight/server#9): the one-shot launch
+        // event + its reliable channel. Server emits, client simulates locally —
+        // no per-tick Transform on the wire for a projectile.
+        crate::projectiles::register(app);
     }
 }

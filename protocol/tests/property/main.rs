@@ -5,3 +5,4 @@
 //! Keep invariants directional/structural, never magnitude-only.
 
 mod lerp_transform;
+mod projectile;

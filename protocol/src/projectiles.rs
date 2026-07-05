@@ -1,0 +1,87 @@
+//! Event-driven projectiles — the wire contract and the shared motion law
+//! (stormlight/server#9).
+//!
+//! A projectile is not replicated as a per-tick stream of `Transform` diffs (one
+//! more mover per shot per client — the cost that dominates a horde). Instead the
+//! server sends the **launch** once as a small one-shot [`ProjectileFired`] event
+//! and every client spawns, simulates, and renders the shot **locally**; the
+//! server stays authoritative on the actual impact. Egress is one datagram per
+//! shot regardless of flight time, instead of `Transform` bytes every tick.
+//!
+//! This module is content-free: it carries pure kinematics, no hero/ability
+//! specifics. The straight-line law below is the single source of truth both the
+//! authoritative server and every client integrate — same launch, same law, same
+//! clock ⇒ agreeing trajectories, so the local visual tracks the authoritative
+//! flight without streaming a single position.
+
+use bevy::math::Vec3;
+use bevy::prelude::*;
+use lightyear::prelude::*;
+use serde::{Deserialize, Serialize};
+
+/// World position of a projectile `elapsed` seconds after launch: straight-line
+/// travel from `origin` along `velocity` (world units/second). Negative
+/// `elapsed` clamps to the launch instant — a shot never flies backwards in
+/// time. This is the one motion law the server and clients share.
+#[inline]
+#[must_use]
+pub fn projectile_position(origin: Vec3, velocity: Vec3, elapsed: f32) -> Vec3 {
+    origin + velocity * elapsed.max(0.0)
+}
+
+/// Distance a projectile with this `velocity` has covered `elapsed` seconds after
+/// launch. The scalar odometer that [`projectile_expired`] compares against the
+/// range; matches the displacement from the launch origin.
+#[inline]
+#[must_use]
+pub fn projectile_traveled(velocity: Vec3, elapsed: f32) -> f32 {
+    velocity.length() * elapsed.max(0.0)
+}
+
+/// Whether a projectile with this `velocity` and maximum `range` has reached the
+/// end of its flight after `elapsed` seconds. Monotone in `elapsed`: once true it
+/// stays true. A non-positive `range` is spent immediately.
+#[inline]
+#[must_use]
+pub fn projectile_expired(velocity: Vec3, range: f32, elapsed: f32) -> bool {
+    projectile_traveled(velocity, elapsed) >= range.max(0.0)
+}
+
+/// The one-shot "a projectile was launched" event, server→client. Small and
+/// fixed-size: the client reconstructs the whole flight from it via the shared
+/// motion law ([`projectile_position`]), so no per-tick `Transform` ever crosses
+/// the wire for the projectile. Content-free — a straight-line launch, nothing
+/// hero- or ability-specific; a mod's client half chooses the mesh/VFX.
+#[derive(Event, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ProjectileFired {
+    /// Launch position in world space.
+    pub origin: Vec3,
+    /// Direction × speed, world units/second. Its length is the speed the client
+    /// integrates; its direction is the flight path.
+    pub velocity: Vec3,
+    /// Maximum flight distance before the shot expires, world units. Bounds the
+    /// client's local simulation so it despawns the visual on its own.
+    pub range: f32,
+}
+
+/// Reliable channel the one-shot launch events ride. Reliable (not per-tick) so a
+/// launch is delivered exactly once and never dropped — a missed shot would leave
+/// a client with no visual for a real projectile. One small message per shot is
+/// still far cheaper than replicating a mover every tick.
+pub struct ProjectileChannel;
+
+/// Register the projectile wire contract on both ends: the reliable channel and
+/// the server→client [`ProjectileFired`] event. Called from
+/// [`ProtocolPlugin`](crate::protocol::ProtocolPlugin) so server and client agree
+/// byte-for-byte.
+pub fn register(app: &mut App) {
+    app.add_channel::<ProjectileChannel>(ChannelSettings {
+        mode: ChannelMode::UnorderedReliable(ReliableSettings::default()),
+        send_frequency: core::time::Duration::default(),
+        priority: 1.0,
+    })
+    .add_direction(NetworkDirection::ServerToClient);
+
+    app.register_event::<ProjectileFired>()
+        .add_direction(NetworkDirection::ServerToClient);
+}
