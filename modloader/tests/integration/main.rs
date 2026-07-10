@@ -6,5 +6,6 @@
 
 mod loader;
 mod register;
+mod report;
 mod sandbox;
 mod vfs;
