@@ -14,8 +14,11 @@
 //! Determinism knobs (NaN canonicalization, no threads) are set now so replays
 //! and the eventual guest-side effect calls behave identically across hosts.
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
+use stormlight_mod_abi::descriptors::Registration;
 use wasmtime::{Config, Engine, Linker, Module, Store, StoreLimits, StoreLimitsBuilder};
+
+use crate::registry::decode_registration;
 
 /// Resource bounds applied to every guest invocation.
 #[derive(Clone, Copy, Debug)]
@@ -97,5 +100,27 @@ impl Host {
         let func = instance.get_typed_func::<(), ()>(&mut store, export)?;
         func.call(&mut store, ())?;
         Ok(())
+    }
+
+    /// Instantiate `wasm`, run its `mod_register` export, and decode the
+    /// [`Registration`] it emitted from the guest's linear memory.
+    ///
+    /// `mod_register` returns a packed `(ptr, len)` into the guest's exported
+    /// `memory` (the pull/return bridge). Bounded by fuel + the memory cap; a
+    /// hostile guest cannot hang here or make us read out of bounds.
+    pub fn register(&self, wasm: &[u8]) -> Result<Registration> {
+        let module = Module::new(&self.engine, wasm)?;
+        let mut store = self.new_store()?;
+        let linker: Linker<StoreState> = Linker::new(&self.engine);
+        let instance = linker.instantiate(&mut store, &module)?;
+
+        // `mod_register` returns `u64`; at the wasm ABI that is an `i64`.
+        let func = instance.get_typed_func::<(), i64>(&mut store, "mod_register")?;
+        let packed = func.call(&mut store, ())? as u64;
+
+        let memory = instance
+            .get_memory(&mut store, "memory")
+            .ok_or_else(|| anyhow!("guest exports no `memory`"))?;
+        decode_registration(memory.data(&store), packed)
     }
 }

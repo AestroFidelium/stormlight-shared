@@ -21,6 +21,8 @@ path = "src/bin/modload.rs"
 wasmtime = { workspace = true, features = ["cranelift", "runtime", "std"] }
 anyhow = { workspace = true }
 zip = { workspace = true }
+# Decode the postcard `Registration` a guest emits.
+postcard = { version = "1", features = ["use-std"] }
 stormlight_mod_abi = { workspace = true, features = ["std", "manifest-parse"] }
 
 [dev-dependencies]

@@ -5,4 +5,5 @@
 //! Keep invariants directional/structural, never magnitude-only.
 
 mod loader;
+mod registry;
 mod sandbox;
