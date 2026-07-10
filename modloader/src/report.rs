@@ -23,6 +23,7 @@ pub fn describe(path: &Path) -> Result<String> {
     let _ = writeln!(out, "mod {} v{} ({:?})", m.id, m.version, m.kind);
     let _ = writeln!(out, "  name:      {}", m.name);
     let _ = writeln!(out, "  abi:       {}", reg.abi);
+    let _ = writeln!(out, "  units:     {}", reg.units.len());
     let _ = writeln!(out, "  abilities: {}", reg.abilities.len());
     let _ = writeln!(out, "  talents:   {}", reg.talents.len());
     let _ = writeln!(out, "  buffs:     {}", reg.buffs.len());

@@ -49,6 +49,7 @@ fn sample_registration() -> Registration {
         buffs: Vec::new(),
         tag_classes: vec![(TagId(0), TagClassId(0))],
         curves: Vec::new(),
+        units: Vec::new(),
     }
 }
 
