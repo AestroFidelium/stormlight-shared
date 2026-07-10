@@ -13,3 +13,4 @@ pub mod client;
 pub mod host;
 pub mod loader;
 pub mod registry;
+pub mod vfs;

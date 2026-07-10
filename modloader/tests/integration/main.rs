@@ -7,3 +7,4 @@
 mod loader;
 mod register;
 mod sandbox;
+mod vfs;
