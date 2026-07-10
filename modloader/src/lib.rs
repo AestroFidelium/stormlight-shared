@@ -5,8 +5,13 @@
 //! `mod_register` / `mod_tick` / trigger entry points. `default-features` off on
 //! wasmtime → synchronous host calls only (cranelift-friendly, no fiber asm).
 //!
-//! [`client`] holds the cosmetic client.wasm runtime; [`host`] the host
-//! functions exposed to guests.
+//! [`client`] holds the cosmetic client.wasm runtime; [`host`] the wasmtime
+//! sandbox; [`loader`] reads + validates a mod package (folder or `.zip`);
+//! [`registry`] decodes emitted registrations into a host-side `ModRegistry`.
 
 pub mod client;
 pub mod host;
+pub mod loader;
+pub mod registry;
+pub mod report;
+pub mod vfs;
