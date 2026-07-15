@@ -43,5 +43,9 @@ impl Plugin for ProtocolPlugin {
         // event + its reliable channel. Server emits, client simulates locally —
         // no per-tick Transform on the wire for a projectile.
         crate::projectiles::register(app);
+
+        // Cast intents (stormlight/server#30): the one player command on the
+        // wire. Client requests, server validates + resolves authoritatively.
+        crate::cast::register(app);
     }
 }

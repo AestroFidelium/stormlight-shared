@@ -6,6 +6,9 @@ pub use crate::easy_resources;
 
 // Re-export the protocol surface as it lands. (`balance` is re-exported here
 // once it has public items; an empty glob would warn.)
+// Selective (not a glob): `cast::register` would collide with
+// `projectiles::register` under a glob re-export.
+pub use crate::cast::{Aim, CastIntent, CastIntentChannel};
 pub use crate::connection::*;
 pub use crate::projectiles::*;
 pub use crate::protocol::ProtocolPlugin;
