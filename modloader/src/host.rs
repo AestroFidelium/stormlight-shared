@@ -20,9 +20,10 @@ use stormlight_mod_abi::descriptors::Registration;
 use stormlight_mod_abi::runtime::{
     ALLOC_EXPORT, GuestEffects, HANDLE_EXPORT, TICK_EXPORT, TRIGGER_EXPORT,
 };
+use stormlight_mod_abi::visuals::ClientRegistration;
 use wasmtime::{Config, Engine, Instance, Linker, Module, Store, StoreLimits, StoreLimitsBuilder};
 
-use crate::registry::decode_registration;
+use crate::registry::{decode_client_registration, decode_registration};
 
 /// Resource bounds applied to every guest invocation.
 #[derive(Clone, Copy, Debug)]
@@ -126,6 +127,25 @@ impl Host {
             .get_memory(&mut store, "memory")
             .ok_or_else(|| anyhow!("guest exports no `memory`"))?;
         decode_registration(memory.data(&store), packed)
+    }
+
+    /// Instantiate `wasm`, run its `mod_register` export, and decode the
+    /// [`ClientRegistration`] a cosmetic (`client.wasm`) guest emitted. Same
+    /// bridge as [`Self::register`], decoding the client-side payload instead of
+    /// the server gameplay one; equally bounded against a hostile guest.
+    pub fn register_client(&self, wasm: &[u8]) -> Result<ClientRegistration> {
+        let module = Module::new(&self.engine, wasm)?;
+        let mut store = self.new_store()?;
+        let linker: Linker<StoreState> = Linker::new(&self.engine);
+        let instance = linker.instantiate(&mut store, &module)?;
+
+        let func = instance.get_typed_func::<(), i64>(&mut store, "mod_register")?;
+        let packed = func.call(&mut store, ())? as u64;
+
+        let memory = instance
+            .get_memory(&mut store, "memory")
+            .ok_or_else(|| anyhow!("guest exports no `memory`"))?;
+        decode_client_registration(memory.data(&store), packed)
     }
 
     /// Precompile `wasm` into a reusable [`GuestModule`]. Compilation is the

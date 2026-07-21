@@ -23,6 +23,8 @@ anyhow = { workspace = true }
 zip = { workspace = true }
 # Decode the postcard `Registration` a guest emits.
 postcard = { version = "1", features = ["use-std"] }
+# The `DeserializeOwned` bound for the generic guest-payload decode.
+serde = { workspace = true }
 stormlight_mod_abi = { workspace = true, features = ["std", "manifest-parse"] }
 
 [dev-dependencies]

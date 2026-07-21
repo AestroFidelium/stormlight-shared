@@ -6138,6 +6138,7 @@ dependencies = [
  "anyhow",
  "bolero",
  "postcard",
+ "serde",
  "stormlight_mod_abi",
  "tempfile",
  "wasmtime",

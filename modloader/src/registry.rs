@@ -10,18 +10,33 @@
 use std::collections::BTreeMap;
 
 use anyhow::{Result, anyhow, bail};
+use serde::de::DeserializeOwned;
 use stormlight_mod_abi::bridge::unpack_ptr_len;
 use stormlight_mod_abi::descriptors::Registration;
 use stormlight_mod_abi::manifest::{ABI_VERSION, Manifest};
+use stormlight_mod_abi::visuals::ClientRegistration;
 
-/// Decode a [`Registration`] out of `memory` at the region named by `packed`.
-pub fn decode_registration(memory: &[u8], packed: u64) -> Result<Registration> {
+/// Bounds-check the region named by `packed` against `memory` and postcard-decode
+/// it into `T`. Total over arbitrary memory + packed values — an out-of-bounds or
+/// malformed payload is an `Err`, never a panic (the guest is untrusted). `what`
+/// names the payload for error messages.
+pub fn decode_payload<T: DeserializeOwned>(memory: &[u8], packed: u64, what: &str) -> Result<T> {
     let (ptr, len) = unpack_ptr_len(packed);
     let (ptr, len) = (ptr as usize, len as usize);
-    let end = ptr.checked_add(len).ok_or_else(|| anyhow!("registration ptr+len overflows"))?;
+    let end = ptr.checked_add(len).ok_or_else(|| anyhow!("{what} ptr+len overflows"))?;
     let bytes =
-        memory.get(ptr..end).ok_or_else(|| anyhow!("registration region {ptr}..{end} out of bounds"))?;
-    postcard::from_bytes(bytes).map_err(|e| anyhow!("decoding registration: {e}"))
+        memory.get(ptr..end).ok_or_else(|| anyhow!("{what} region {ptr}..{end} out of bounds"))?;
+    postcard::from_bytes(bytes).map_err(|e| anyhow!("decoding {what}: {e}"))
+}
+
+/// Decode a [`Registration`] (server gameplay content) from a guest's memory.
+pub fn decode_registration(memory: &[u8], packed: u64) -> Result<Registration> {
+    decode_payload(memory, packed, "registration")
+}
+
+/// Decode a [`ClientRegistration`] (cosmetic content) from a guest's memory.
+pub fn decode_client_registration(memory: &[u8], packed: u64) -> Result<ClientRegistration> {
+    decode_payload(memory, packed, "client registration")
 }
 
 /// A mod that has been loaded, instantiated, and registered: its validated
