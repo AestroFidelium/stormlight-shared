@@ -8,6 +8,7 @@
 pub mod balance;
 pub mod cast;
 pub mod connection;
+pub mod impact;
 pub mod projectiles;
 pub mod protocol;
 pub mod quantize;

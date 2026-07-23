@@ -8,7 +8,8 @@ pub use crate::easy_resources;
 // once it has public items; an empty glob would warn.)
 // Selective (not a glob): `cast::register` would collide with
 // `projectiles::register` under a glob re-export.
-pub use crate::cast::{Aim, CastIntent, CastIntentChannel};
+pub use crate::cast::{Aim, CastIntent, CastIntentChannel, CastProgress};
 pub use crate::connection::*;
+pub use crate::impact::{ImpactChannel, ImpactEvent};
 pub use crate::projectiles::*;
 pub use crate::protocol::ProtocolPlugin;
