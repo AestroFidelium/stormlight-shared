@@ -5,6 +5,8 @@
 //! Keep invariants directional/structural, never magnitude-only.
 
 mod cast_intent;
+mod cast_progress;
+mod impact;
 mod lerp_transform;
 mod projectile;
 mod quantize;

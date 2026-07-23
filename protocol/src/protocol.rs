@@ -46,6 +46,12 @@ impl Plugin for ProtocolPlugin {
 
         // Cast intents (stormlight/server#30): the one player command on the
         // wire. Client requests, server validates + resolves authoritatively.
+        // Also registers the replicated `CastProgress` cast-indicator state.
         crate::cast::register(app);
+
+        // Authoritative impact feedback (stormlight/server#36): the one-shot
+        // "a shot landed here" event + its reliable channel. Server announces the
+        // hit; each client plays a transient impact visual there.
+        crate::impact::register(app);
     }
 }

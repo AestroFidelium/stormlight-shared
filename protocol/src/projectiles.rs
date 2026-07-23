@@ -62,6 +62,12 @@ pub struct ProjectileFired {
     /// Maximum flight distance before the shot expires, world units. Bounds the
     /// client's local simulation so it despawns the visual on its own.
     pub range: f32,
+    /// Cosmetic key: the (global) id of the launching ability, so the client's
+    /// cosmetic half can pick the missile's visual (see the client's
+    /// `EffectVisuals` / `EffectRole::Projectile`). `0` means "no specific visual"
+    /// — the client draws its neutral placeholder. Content-free: an opaque id,
+    /// never a hero/ability name.
+    pub vfx: u32,
 }
 
 /// Reliable channel the one-shot launch events ride. Reliable (not per-tick) so a

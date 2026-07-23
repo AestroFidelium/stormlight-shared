@@ -35,6 +35,7 @@ fn sample() -> ClientRegistration {
                 scale: 2.0,
             },
         }],
+        effects: Vec::new(),
     }
 }
 

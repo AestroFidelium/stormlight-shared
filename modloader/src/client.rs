@@ -16,7 +16,7 @@ use std::path::Path;
 
 use anyhow::{Result, anyhow, bail};
 use stormlight_mod_abi::manifest::{ABI_VERSION, ModKind};
-use stormlight_mod_abi::visuals::{ClientRegistration, VisualModel};
+use stormlight_mod_abi::visuals::{ClientRegistration, EffectRole, VisualModel};
 
 use crate::host::Host;
 use crate::loader::{self, LoadedMod};
@@ -29,15 +29,19 @@ use crate::vfs::{ModSource, Vfs};
 #[derive(Clone, Debug, Default)]
 pub struct AdoptedVisuals {
     by_name: BTreeMap<String, VisualModel>,
+    by_effect: BTreeMap<(String, EffectRole), VisualModel>,
 }
 
 impl AdoptedVisuals {
-    /// Build the unit-name → visual table from a decoded [`ClientRegistration`].
+    /// Build the visual tables from a decoded [`ClientRegistration`]: units keyed
+    /// by unit name, ability feedback keyed by `(ability name, role)`.
     ///
-    /// Total over hostile input: a major ABI mismatch, or a visual referencing a
+    /// Total over hostile input: a major ABI mismatch, a unit visual referencing a
     /// unit handle with no [`names.units`](stormlight_mod_abi::descriptors::Names)
-    /// entry (a dangling reference), is an `Err` — never a panic. When two visuals
-    /// name the same unit the later one wins (deterministic, insertion order).
+    /// entry, or an effect visual referencing an ability handle with no
+    /// `names.abilities` entry (a dangling reference), is an `Err` — never a panic.
+    /// When two entries name the same key the later one wins (deterministic,
+    /// insertion order).
     pub fn adopt(reg: &ClientRegistration) -> Result<Self> {
         if reg.abi.major != ABI_VERSION.major {
             bail!(
@@ -53,7 +57,17 @@ impl AdoptedVisuals {
             })?;
             by_name.insert(name.clone(), v.model.clone());
         }
-        Ok(Self { by_name })
+        let mut by_effect = BTreeMap::new();
+        for e in &reg.effects {
+            let name = reg.names.abilities.get(e.ability.0 as usize).ok_or_else(|| {
+                anyhow!(
+                    "effect visual references ability handle {} with no name-table entry",
+                    e.ability.0
+                )
+            })?;
+            by_effect.insert((name.clone(), e.role), e.model.clone());
+        }
+        Ok(Self { by_name, by_effect })
     }
 
     /// The visual declared for the unit named `unit_name`, if any.
@@ -62,21 +76,32 @@ impl AdoptedVisuals {
         self.by_name.get(unit_name)
     }
 
+    /// The feedback visual declared for `ability_name` in `role`, if any.
+    #[must_use]
+    pub fn effect(&self, ability_name: &str, role: EffectRole) -> Option<&VisualModel> {
+        self.by_effect.get(&(ability_name.to_string(), role))
+    }
+
     /// Number of units this mod dresses.
     #[must_use]
     pub fn len(&self) -> usize {
         self.by_name.len()
     }
 
-    /// Whether this mod declares no visuals.
+    /// Whether this mod declares no visuals at all (neither units nor effects).
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.by_name.is_empty()
+        self.by_name.is_empty() && self.by_effect.is_empty()
     }
 
     /// Iterate the `(unit name, visual)` pairs, in unit-name order.
     pub fn iter(&self) -> impl Iterator<Item = (&String, &VisualModel)> {
         self.by_name.iter()
+    }
+
+    /// Iterate the `((ability name, role), visual)` pairs, in key order.
+    pub fn effects(&self) -> impl Iterator<Item = (&(String, EffectRole), &VisualModel)> {
+        self.by_effect.iter()
     }
 }
 
@@ -87,12 +112,18 @@ pub struct ClientHost {
     host: Host,
     vfs: Vfs,
     visuals: BTreeMap<String, VisualModel>,
+    effects: BTreeMap<(String, EffectRole), VisualModel>,
 }
 
 impl ClientHost {
     /// A fresh host with no mods loaded.
     pub fn new() -> Result<Self> {
-        Ok(Self { host: Host::new()?, vfs: Vfs::new(), visuals: BTreeMap::new() })
+        Ok(Self {
+            host: Host::new()?,
+            vfs: Vfs::new(),
+            visuals: BTreeMap::new(),
+            effects: BTreeMap::new(),
+        })
     }
 
     /// Load a cosmetic mod from `path` — a folder or a `.zip` package.
@@ -122,9 +153,12 @@ impl ClientHost {
         }
         let reg = self.host.register_client(&loaded.wasm)?;
         let adopted = AdoptedVisuals::adopt(&reg)?;
-        // Merge into the combined table; a later mod overrides an earlier unit.
+        // Merge into the combined tables; a later mod overrides an earlier entry.
         for (name, model) in adopted.iter() {
             self.visuals.insert(name.clone(), model.clone());
+        }
+        for (key, model) in adopted.effects() {
+            self.effects.insert(key.clone(), model.clone());
         }
         self.vfs.insert(loaded.manifest.id, source);
         Ok(())
@@ -153,5 +187,25 @@ impl ClientHost {
     #[must_use]
     pub fn visual_count(&self) -> usize {
         self.visuals.len()
+    }
+
+    /// The ability-feedback visual a loaded cosmetic mod declared for
+    /// `ability_name` in `role`, or `None` (the client uses its placeholder then).
+    #[must_use]
+    pub fn effect(&self, ability_name: &str, role: EffectRole) -> Option<&VisualModel> {
+        self.effects.get(&(ability_name.to_string(), role))
+    }
+
+    /// Iterate every adopted `((ability name, role), visual)` across all loaded
+    /// cosmetic mods, in key order — how the client fills its effect table.
+    pub fn effects(&self) -> impl Iterator<Item = (&(String, EffectRole), &VisualModel)> {
+        self.effects.iter()
+    }
+
+    /// Number of distinct `(ability, role)` effect visuals across all loaded
+    /// cosmetic mods.
+    #[must_use]
+    pub fn effect_count(&self) -> usize {
+        self.effects.len()
     }
 }
