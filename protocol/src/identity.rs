@@ -22,6 +22,12 @@ pub struct UnitTag(pub u32);
 
 /// Register the identity component for replication. Called from
 /// [`crate::protocol::ProtocolPlugin`] on both ends so the protocol matches.
+///
+/// Registered to **sync onto the interpolated entity** too: replicated components
+/// land on the confirmed entity, but the client renders a unit on its smoothed
+/// `Interpolated` mirror, and the cosmetic layer resolves the visual from the
+/// identity there. A discrete id has no meaningful in-between, so the "lerp" is
+/// the identity — take the confirmed value (server#41/#44).
 pub fn register(app: &mut App) {
-    app.register_component::<UnitTag>();
+    app.register_component::<UnitTag>().add_interpolation_with(|_start, end, _t| end);
 }

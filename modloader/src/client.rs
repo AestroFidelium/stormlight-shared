@@ -15,6 +15,8 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Result, anyhow, bail};
+use stormlight_mod_abi::ids::{AbilityId, UnitId};
+use stormlight_mod_abi::interner::Interner;
 use stormlight_mod_abi::manifest::{ABI_VERSION, ModKind};
 use stormlight_mod_abi::visuals::{ClientRegistration, EffectRole, VisualModel};
 
@@ -113,6 +115,13 @@ pub struct ClientHost {
     vfs: Vfs,
     visuals: BTreeMap<String, VisualModel>,
     effects: BTreeMap<(String, EffectRole), VisualModel>,
+    /// The gameplay-side name→global-id maps, rebuilt from each loaded gameplay
+    /// mod's `Names` in load order — the same interning server adoption does, so
+    /// a cosmetic's name resolves to the id the wire carries (`UnitTag` / `vfx`).
+    /// `UnitId`/`AbilityId` have no reserved names, so cumulative interning from 0
+    /// reproduces the server's ids exactly.
+    unit_ids: Interner<UnitId>,
+    ability_ids: Interner<AbilityId>,
 }
 
 impl ClientHost {
@@ -123,7 +132,58 @@ impl ClientHost {
             vfs: Vfs::new(),
             visuals: BTreeMap::new(),
             effects: BTreeMap::new(),
+            unit_ids: Interner::new(),
+            ability_ids: Interner::new(),
         })
+    }
+
+    /// Load a gameplay (server) mod package purely to learn its name→global-id
+    /// mapping — run its registration and intern the unit/ability names it
+    /// declared, in load order. Call this for each gameplay mod in the **same
+    /// order the server loads them**, so the reconstructed ids line up with the
+    /// wire. A cosmetic-kind mod is rejected. Does not touch the visual tables.
+    pub fn load_gameplay(&mut self, path: &Path) -> Result<()> {
+        self.adopt_gameplay(loader::load(path)?)
+    }
+
+    /// Rebuild the name→id map from the bytes of a gameplay `.zip` package.
+    /// Byte-oriented so the id bridge is exercised hermetically without touching
+    /// the filesystem; the counterpart to [`load_gameplay`](Self::load_gameplay).
+    pub fn load_gameplay_zip_bytes(&mut self, bytes: &[u8]) -> Result<()> {
+        self.adopt_gameplay(loader::load_zip_bytes(bytes)?)
+    }
+
+    /// Intern one gameplay mod's unit/ability names in load order (rejecting a
+    /// cosmetic-kind package), reproducing the ids server adoption assigns.
+    fn adopt_gameplay(&mut self, loaded: LoadedMod) -> Result<()> {
+        if loaded.manifest.kind != ModKind::Server {
+            bail!("mod `{}` is not a gameplay (server) mod", loaded.manifest.id);
+        }
+        let reg = self.host.register(&loaded.wasm)?;
+        for name in &reg.names.units {
+            self.unit_ids.intern(name);
+        }
+        for name in &reg.names.abilities {
+            self.ability_ids.intern(name);
+        }
+        Ok(())
+    }
+
+    /// Every adopted unit visual keyed by the **global `UnitId`** the wire uses,
+    /// resolved through the name→id map [`load_gameplay`](Self::load_gameplay)
+    /// built. A visual for a unit no loaded gameplay mod defines (no id) is
+    /// skipped — the client falls back to its placeholder for it.
+    pub fn visuals_by_id(&self) -> impl Iterator<Item = (UnitId, &VisualModel)> {
+        self.visuals.iter().filter_map(|(name, model)| Some((self.unit_ids.get(name)?, model)))
+    }
+
+    /// Every adopted ability-feedback visual keyed by the **global `AbilityId`**
+    /// (the `vfx` key) plus its role. An effect for an ability no loaded gameplay
+    /// mod defines is skipped, exactly like [`visuals_by_id`](Self::visuals_by_id).
+    pub fn effects_by_id(&self) -> impl Iterator<Item = ((AbilityId, EffectRole), &VisualModel)> {
+        self.effects
+            .iter()
+            .filter_map(|((name, role), model)| Some(((self.ability_ids.get(name)?, *role), model)))
     }
 
     /// Load a cosmetic mod from `path` — a folder or a `.zip` package.
