@@ -251,6 +251,17 @@ pub struct GuestModule {
     module: Module,
 }
 
+impl GuestModule {
+    /// Whether the guest exports a function named `name`. Lets the host probe the
+    /// optional runtime entries (`mod_tick` / `mod_trigger`) once at load and
+    /// invoke only the mods that opted in, instead of trapping on a missing export
+    /// every tick.
+    #[must_use]
+    pub fn exports_func(&self, name: &str) -> bool {
+        self.module.exports().any(|e| e.name() == name && e.ty().func().is_some())
+    }
+}
+
 /// Which runtime entry point to call, plus its selector where one applies.
 #[derive(Clone, Copy)]
 enum Entry {
