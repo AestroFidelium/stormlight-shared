@@ -10,6 +10,7 @@ pub use crate::easy_resources;
 // `projectiles::register` under a glob re-export.
 pub use crate::cast::{Aim, CastIntent, CastIntentChannel, CastProgress};
 pub use crate::connection::*;
+pub use crate::identity::UnitTag;
 pub use crate::impact::{ImpactChannel, ImpactEvent};
 pub use crate::projectiles::*;
 pub use crate::protocol::ProtocolPlugin;
