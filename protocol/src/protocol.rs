@@ -39,6 +39,11 @@ impl Plugin for ProtocolPlugin {
         // entity carries them; the demo attaches them behind `STRESS_RICH`.
         crate::stress::register(app);
 
+        // Replicated unit identity (stormlight/server#41): the one generic key a
+        // client uses to resolve a replicated entity to the visual a cosmetic mod
+        // declared for its unit descriptor. An opaque global id, never a name.
+        crate::identity::register(app);
+
         // Event-driven projectiles (stormlight/server#9): the one-shot launch
         // event + its reliable channel. Server emits, client simulates locally —
         // no per-tick Transform on the wire for a projectile.
