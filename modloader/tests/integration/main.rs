@@ -5,6 +5,7 @@
 //! Keep invariants directional/structural, never magnitude-only.
 
 mod client;
+mod client_id_bridge;
 mod invoke;
 mod loader;
 mod register;
