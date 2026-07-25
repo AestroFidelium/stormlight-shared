@@ -31,7 +31,13 @@ impl Plugin for ProtocolPlugin {
         // `Replicate` / `InterpolationTarget` bundle at spawn time still decides,
         // per entity, who receives it and whether it is interpolated.
         app.register_component_custom_serde::<Transform>(crate::quantize::serialize_fns())
-            .add_interpolation_with(crate::connection::lerp_transform);
+            .add_interpolation_with(crate::connection::lerp_transform)
+            // Client-side prediction of the controlled unit (stormlight/server#50):
+            // the owner's client rolls its predicted Transform back onto the
+            // authoritative one only when they diverge past a small epsilon, so a
+            // smoothly predicted unit is not yanked by float noise every snapshot.
+            .add_prediction()
+            .add_should_rollback(crate::movement::transform_should_rollback);
 
         // Representative per-unit state components, registered on both ends so
         // the `cube_demo` stress test can measure how replication scales past a
@@ -58,5 +64,10 @@ impl Plugin for ProtocolPlugin {
         // "a shot landed here" event + its reliable channel. Server announces the
         // hit; each client plays a transient impact visual there.
         crate::impact::register(app);
+
+        // Player move orders (stormlight/server#47): a client asks its controlled
+        // unit to walk to a ground point; the server moves it authoritatively and
+        // replicates the Transform like any mover.
+        crate::movement::register(app);
     }
 }

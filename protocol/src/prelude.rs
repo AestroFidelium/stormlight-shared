@@ -12,5 +12,8 @@ pub use crate::cast::{Aim, CastIntent, CastIntentChannel, CastProgress};
 pub use crate::connection::*;
 pub use crate::identity::UnitTag;
 pub use crate::impact::{ImpactChannel, ImpactEvent};
+pub use crate::movement::{
+    MoveStep, advance_mover, angle_delta, step_toward, turn_toward, wrap_angle, yaw_to,
+};
 pub use crate::projectiles::*;
 pub use crate::protocol::ProtocolPlugin;
