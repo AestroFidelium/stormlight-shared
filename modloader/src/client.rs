@@ -237,6 +237,14 @@ impl ClientHost {
         self.vfs.read(url)
     }
 
+    /// Consume the host, yielding the [`Vfs`] of every loaded mod's package root.
+    /// The client hands this to its `mod://` asset reader so cosmetic art keeps
+    /// resolving after the startup loader (and the host itself) is gone.
+    #[must_use]
+    pub fn into_vfs(self) -> Vfs {
+        self.vfs
+    }
+
     /// Iterate every adopted `(unit name, visual)` across all loaded cosmetic
     /// mods, in unit-name order — how the client fills its render-side table.
     pub fn visuals(&self) -> impl Iterator<Item = (&String, &VisualModel)> {
