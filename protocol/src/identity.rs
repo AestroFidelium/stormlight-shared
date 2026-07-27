@@ -23,11 +23,20 @@ pub struct UnitTag(pub u32);
 /// Register the identity component for replication. Called from
 /// [`crate::protocol::ProtocolPlugin`] on both ends so the protocol matches.
 ///
-/// Registered to **sync onto the interpolated entity** too: replicated components
-/// land on the confirmed entity, but the client renders a unit on its smoothed
-/// `Interpolated` mirror, and the cosmetic layer resolves the visual from the
-/// identity there. A discrete id has no meaningful in-between, so the "lerp" is
-/// the identity — take the confirmed value (server#41/#44).
+/// Registered to sync onto **both** client-side mirrors of a replicated unit:
+///
+/// - the smoothed `Interpolated` copy every other player's unit is rendered on;
+/// - the `Predicted` copy the player's *own* unit is rendered on (server#50).
+///
+/// Both matter, because the cosmetic layer resolves a unit's visual from its
+/// identity wherever that unit is drawn — and a controlled unit is only ever
+/// predicted, never interpolated. Without the prediction registration the one
+/// unit a player looks at all match is the one the id never reaches.
+///
+/// A discrete id has no meaningful in-between, so the interpolation "lerp" is the
+/// identity — take the confirmed value (server#41/#44).
 pub fn register(app: &mut App) {
-    app.register_component::<UnitTag>().add_interpolation_with(|_start, end, _t| end);
+    app.register_component::<UnitTag>()
+        .add_interpolation_with(|_start, end, _t| end)
+        .add_prediction();
 }
