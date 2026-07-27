@@ -10,7 +10,7 @@ use core::f32::consts::{PI, TAU};
 use bevy::math::{Quat, Vec2, Vec3};
 use bolero::{TypeGenerator, check};
 use stormlight_shared::movement::{
-    advance_mover, angle_delta, step_toward, turn_toward, wrap_angle, yaw_to,
+    advance_mover, angle_delta, face_travel, step_toward, turn_toward, wrap_angle, yaw_to,
 };
 
 #[derive(Debug, TypeGenerator)]
@@ -199,5 +199,40 @@ fn yaw_orients_forward_along_travel() {
             "yaw_to did not orient +X along the travel direction (dot {})",
             fwd_ground.dot(d.normalize()),
         );
+    });
+}
+
+#[test]
+fn facing_follows_realized_travel_and_a_still_mover_keeps_its_heading() {
+    check!().with_type::<Kin>().for_each(|k| {
+        // `face_travel` is the facing half of the law, split out so a mover whose
+        // realized travel was steered away from its goal (local avoidance,
+        // server#51) still faces where it actually went.
+        let facing = angle(k.facing);
+        let travel = Vec2::new(coord(k.gx) - coord(k.px), coord(k.gz) - coord(k.pz));
+        let rate = frac(k.rate) * 12.0;
+        let dt = f32::from(k.dt) / 255.0 * 0.1;
+
+        // Standing still keeps the heading, exactly — no snap to a default.
+        assert_eq!(
+            face_travel(facing, Vec2::ZERO, rate, dt),
+            wrap_angle(facing),
+            "a mover that did not travel changed its heading",
+        );
+
+        let turned = face_travel(facing, travel, rate, dt);
+        assert!(
+            angle_delta(facing, turned).abs() <= rate * dt + 1e-4,
+            "facing turned faster than the mover's turn rate",
+        );
+        if travel.length() > 1e-2 {
+            // The turn is toward the travel direction, never away from it.
+            let want = angle_delta(facing, yaw_to(travel));
+            let got = angle_delta(facing, turned);
+            assert!(
+                got.abs() <= want.abs() + 1e-4 && (got == 0.0 || got.signum() == want.signum()),
+                "facing did not turn toward the direction of travel",
+            );
+        }
     });
 }

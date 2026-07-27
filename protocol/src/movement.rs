@@ -133,6 +133,24 @@ pub fn yaw_to(dir: Vec2) -> f32 {
     }
 }
 
+/// Turn `facing` toward the direction a mover actually travelled this tick, at
+/// `turn_rate` radians/second. A mover that did not move keeps its heading —
+/// there is no travel direction to face, and snapping to a default would spin a
+/// resting unit. Pure.
+///
+/// Split out of [`advance_mover`] because a mover's realized travel is not always
+/// its straight step toward the goal: local avoidance (server#51) steers it, and
+/// the unit must face where it *went*, not where it wanted to go.
+#[must_use]
+pub fn face_travel(facing: f32, travel: Vec2, turn_rate: f32, dt: f32) -> f32 {
+    let desired = if travel.length_squared() > f32::EPSILON {
+        yaw_to(travel)
+    } else {
+        facing
+    };
+    turn_toward(facing, desired, turn_rate, dt)
+}
+
 /// One kinematic step's result: the new ground position, the new facing yaw, and
 /// whether the mover reached its `goal` this step.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -161,15 +179,9 @@ pub fn advance_mover(
     dt: f32,
 ) -> MoveStep {
     let next = step_toward(pos, goal, speed, dt);
-    let travel = next - pos;
-    let desired = if travel.length_squared() > f32::EPSILON {
-        yaw_to(travel)
-    } else {
-        facing
-    };
     MoveStep {
         pos: next,
-        facing: turn_toward(facing, desired, turn_rate, dt),
+        facing: face_travel(facing, next - pos, turn_rate, dt),
         arrived: next == goal,
     }
 }
