@@ -50,6 +50,7 @@ fn sample_registration() -> Registration {
         tag_classes: vec![(TagId(0), TagClassId(0))],
         curves: Vec::new(),
         units: Vec::new(),
+        navmeshes: Vec::new(),
     }
 }
 
