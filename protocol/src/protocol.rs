@@ -73,6 +73,12 @@ impl Plugin for ProtocolPlugin {
         crate::vitals::register(app);
         crate::pools::register(app);
 
+        // The owner's ability slots (stormlight/server#58): what each key binds
+        // to, when it comes off cooldown, and whether it is castable right now.
+        // Privileged per-player state — it rides its own entity, replicated to
+        // the controlling player alone, so no opponent reads your cooldowns.
+        crate::slots::register(app);
+
         // Player move orders (stormlight/server#47): a client asks its controlled
         // unit to walk to a ground point; the server moves it authoritatively and
         // replicates the Transform like any mover.
