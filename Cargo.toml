@@ -1,10 +1,11 @@
 # `shared` repo — code shared by server and client. Public.
-# A small workspace: the protocol/balance/macros library + the WASM modloader
-# host (used by both server and client to load mods). Cross-repo path deps point
+# A small workspace: the protocol/balance/macros library, the WASM modloader
+# host (used by both server and client to load mods), and the shared walkable-map
+# geometry both ends must agree on (server#79). Cross-repo path deps point
 # at sibling repos under the umbrella `stormlight/` folder.
 [workspace]
 resolver = "2"
-members = ["protocol", "modloader"]
+members = ["protocol", "modloader", "navigation"]
 
 [workspace.package]
 version = "0.1.0"

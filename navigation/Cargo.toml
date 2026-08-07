@@ -1,0 +1,25 @@
+[package]
+name = "stormlight_navigation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Walkable map geometry shared by the authoritative server and the predicting client"
+
+[lints]
+workspace = true
+
+[dependencies]
+# ECS + math only; the region is headless geometry, never a renderer.
+bevy = { workspace = true }
+# Polygon A* ("Polyanya"), engine-agnostic (plain glam).
+polyanya = { version = "0.16.1", default-features = false }
+# The map descriptor a mod declares.
+stormlight_mod_abi = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+bolero = { workspace = true }
+
+[[test]]
+name = "property"
+path = "tests/property/main.rs"

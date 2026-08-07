@@ -18,6 +18,7 @@ use anyhow::{Result, anyhow, bail};
 use stormlight_mod_abi::ids::{AbilityId, UnitId};
 use stormlight_mod_abi::interner::Interner;
 use stormlight_mod_abi::manifest::{ABI_VERSION, ModKind};
+use stormlight_mod_abi::navmesh::NavMeshDescriptor;
 use stormlight_mod_abi::visuals::{ClientRegistration, EffectRole, VisualModel};
 
 use crate::host::Host;
@@ -122,6 +123,12 @@ pub struct ClientHost {
     /// reproduces the server's ids exactly.
     unit_ids: Interner<UnitId>,
     ability_ids: Interner<AbilityId>,
+    /// Map geometry declared by the loaded gameplay mods, in load order. The
+    /// client bakes this into the same walkable region the server routes over, so
+    /// it can draw the map and agree with the server about where a unit may stand
+    /// (server#79). Only the geometry is kept — the descriptor's own id is local
+    /// to its mod and nothing client-side names a mesh by id.
+    navmeshes: Vec<NavMeshDescriptor>,
 }
 
 impl ClientHost {
@@ -134,6 +141,7 @@ impl ClientHost {
             effects: BTreeMap::new(),
             unit_ids: Interner::new(),
             ability_ids: Interner::new(),
+            navmeshes: Vec::new(),
         })
     }
 
@@ -166,7 +174,15 @@ impl ClientHost {
         for name in &reg.names.abilities {
             self.ability_ids.intern(name);
         }
+        self.navmeshes.extend(reg.navmeshes.iter().cloned());
         Ok(())
+    }
+
+    /// The map geometry the loaded gameplay mods declared, in load order. Empty
+    /// when none of them ships a map — the client then draws no ground and falls
+    /// back to unclamped movement, exactly as it behaved before server#79.
+    pub fn navmeshes(&self) -> &[NavMeshDescriptor] {
+        &self.navmeshes
     }
 
     /// Every adopted unit visual keyed by the **global `UnitId`** the wire uses,
