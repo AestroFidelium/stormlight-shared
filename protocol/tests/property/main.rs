@@ -10,5 +10,7 @@ mod impact;
 mod lerp_transform;
 mod move_order;
 mod mover;
+mod pools;
 mod projectile;
 mod quantize;
+mod vitals;
