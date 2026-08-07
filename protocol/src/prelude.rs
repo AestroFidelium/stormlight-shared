@@ -15,5 +15,7 @@ pub use crate::impact::{ImpactChannel, ImpactEvent};
 pub use crate::movement::{
     MoveStep, advance_mover, angle_delta, step_toward, turn_toward, wrap_angle, yaw_to,
 };
+pub use crate::pools::{PoolState, ReplicatedPools};
 pub use crate::projectiles::*;
 pub use crate::protocol::ProtocolPlugin;
+pub use crate::vitals::ReplicatedVitals;

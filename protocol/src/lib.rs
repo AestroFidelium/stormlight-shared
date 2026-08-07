@@ -11,10 +11,12 @@ pub mod connection;
 pub mod identity;
 pub mod impact;
 pub mod movement;
+pub mod pools;
 pub mod projectiles;
 pub mod protocol;
 pub mod quantize;
 pub mod stress;
+pub mod vitals;
 
 // `#[macro_export]` puts the macros at the crate root; the module still has to
 // be declared so the file is compiled.

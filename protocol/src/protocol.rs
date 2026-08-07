@@ -65,6 +65,14 @@ impl Plugin for ProtocolPlugin {
         // hit; each client plays a transient impact visual there.
         crate::impact::register(app);
 
+        // Combat vitals + resource pools (stormlight/server#57): the health/shield
+        // and wallet state a client draws bars from. Quantized ceiling-and-fraction
+        // frames, interpolated so the bars slide rather than step at the
+        // replication rate, and public — visibility is decided once, by the
+        // entity-level area-of-interest culling (see `pools`).
+        crate::vitals::register(app);
+        crate::pools::register(app);
+
         // Player move orders (stormlight/server#47): a client asks its controlled
         // unit to walk to a ground point; the server moves it authoritatively and
         // replicates the Transform like any mover.
