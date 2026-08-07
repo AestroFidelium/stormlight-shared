@@ -18,4 +18,5 @@ pub use crate::movement::{
 pub use crate::pools::{PoolState, ReplicatedPools};
 pub use crate::projectiles::*;
 pub use crate::protocol::ProtocolPlugin;
+pub use crate::slots::{ReplicatedSlots, SlotState};
 pub use crate::vitals::ReplicatedVitals;

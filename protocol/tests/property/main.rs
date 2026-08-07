@@ -13,4 +13,5 @@ mod mover;
 mod pools;
 mod projectile;
 mod quantize;
+mod slots;
 mod vitals;
