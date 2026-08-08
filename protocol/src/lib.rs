@@ -13,6 +13,7 @@ pub mod identity;
 pub mod impact;
 pub mod movement;
 pub mod pools;
+pub mod progression;
 pub mod projectiles;
 pub mod protocol;
 pub mod quantize;

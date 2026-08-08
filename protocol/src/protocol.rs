@@ -84,6 +84,12 @@ impl Plugin for ProtocolPlugin {
         // the controlling player alone, so no opponent reads your cooldowns.
         crate::slots::register(app);
 
+        // Progression (stormlight/server#62): a unit's level, public because it
+        // changes how you play against it, and the owner's own XP progress,
+        // privileged because knowing when someone is about to level is knowing
+        // when to contest them. The two ride different entities for that reason.
+        crate::progression::register(app);
+
         // Player move orders (stormlight/server#47): a client asks its controlled
         // unit to walk to a ground point; the server moves it authoritatively and
         // replicates the Transform like any mover.
