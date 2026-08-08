@@ -12,6 +12,7 @@ mod lerp_transform;
 mod move_order;
 mod mover;
 mod pools;
+mod progression;
 mod projectile;
 mod quantize;
 mod slots;
