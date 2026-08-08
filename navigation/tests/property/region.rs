@@ -48,6 +48,7 @@ fn descriptor(agent_radius: f32) -> NavMeshDescriptor {
             [PILLAR, -PILLAR],
         ]],
         agent_radius,
+        placements: Vec::new(),
     }
 }
 

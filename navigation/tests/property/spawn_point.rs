@@ -55,6 +55,7 @@ fn arena(half: f32, block: f32) -> NavMesh {
         outline: rect(0.0, 0.0, half, half),
         obstacles: vec![rect(0.0, 0.0, block, block)],
         agent_radius: 0.5,
+        placements: Vec::new(),
     })
     .expect("a rectangular arena bakes")
 }

@@ -8,6 +8,7 @@
 pub mod balance;
 pub mod cast;
 pub mod connection;
+pub mod death;
 pub mod identity;
 pub mod impact;
 pub mod movement;
