@@ -50,6 +50,11 @@ impl Plugin for ProtocolPlugin {
         // declared for its unit descriptor. An opaque global id, never a name.
         crate::identity::register(app);
 
+        // The replicated alive/dead state (stormlight/server#61): whether a unit
+        // has been killed and not yet come back, so a client stops drawing a
+        // live unit as live.
+        crate::death::register(app);
+
         // Event-driven projectiles (stormlight/server#9): the one-shot launch
         // event + its reliable channel. Server emits, client simulates locally —
         // no per-tick Transform on the wire for a projectile.

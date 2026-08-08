@@ -6,6 +6,7 @@
 
 mod cast_intent;
 mod cast_progress;
+mod death;
 mod impact;
 mod lerp_transform;
 mod move_order;
