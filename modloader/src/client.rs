@@ -15,7 +15,8 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Result, anyhow, bail};
-use stormlight_mod_abi::ids::{AbilityId, UnitId};
+use stormlight_mod_abi::abilities::Targeting;
+use stormlight_mod_abi::ids::{AbilityId, Handle, UnitId};
 use stormlight_mod_abi::interner::Interner;
 use stormlight_mod_abi::manifest::{ABI_VERSION, ModKind};
 use stormlight_mod_abi::navmesh::NavMeshDescriptor;
@@ -123,6 +124,12 @@ pub struct ClientHost {
     /// reproduces the server's ids exactly.
     unit_ids: Interner<UnitId>,
     ability_ids: Interner<AbilityId>,
+    /// How each gameplay ability is aimed, keyed by the **global `AbilityId`**
+    /// (server#59). The client cannot decide an aim mode locally — it is mod data
+    /// like everything else — so the same gameplay pass that rebuilds the id map
+    /// records the declared [`Targeting`] alongside it, and the client resolves a
+    /// keypress into an `Aim` of exactly that shape.
+    aiming: BTreeMap<AbilityId, Targeting>,
     /// Map geometry declared by the loaded gameplay mods, in load order. The
     /// client bakes this into the same walkable region the server routes over, so
     /// it can draw the map and agree with the server about where a unit may stand
@@ -141,6 +148,7 @@ impl ClientHost {
             effects: BTreeMap::new(),
             unit_ids: Interner::new(),
             ability_ids: Interner::new(),
+            aiming: BTreeMap::new(),
             navmeshes: Vec::new(),
         })
     }
@@ -162,7 +170,8 @@ impl ClientHost {
     }
 
     /// Intern one gameplay mod's unit/ability names in load order (rejecting a
-    /// cosmetic-kind package), reproducing the ids server adoption assigns.
+    /// cosmetic-kind package), reproducing the ids server adoption assigns, and
+    /// record each ability's declared aim mode against the id it landed on.
     fn adopt_gameplay(&mut self, loaded: LoadedMod) -> Result<()> {
         if loaded.manifest.kind != ModKind::Server {
             bail!("mod `{}` is not a gameplay (server) mod", loaded.manifest.id);
@@ -174,8 +183,32 @@ impl ClientHost {
         for name in &reg.names.abilities {
             self.ability_ids.intern(name);
         }
+        // Aim modes, re-keyed local → global through the names just interned. A
+        // descriptor pointing at a missing name entry is a broken registration:
+        // report it rather than dropping the mode, which would leave the client
+        // sending the wrong aim shape for that ability forever.
+        for ability in &reg.abilities {
+            let name = reg.names.abilities.get(ability.id.raw() as usize).ok_or_else(|| {
+                anyhow!(
+                    "ability descriptor {} has no name-table entry",
+                    ability.id.raw()
+                )
+            })?;
+            let global = self
+                .ability_ids
+                .get(name)
+                .ok_or_else(|| anyhow!("ability `{name}` was not interned"))?;
+            self.aiming.insert(global, ability.targeting.clone());
+        }
         self.navmeshes.extend(reg.navmeshes.iter().cloned());
         Ok(())
+    }
+
+    /// Every gameplay ability's declared aim mode, keyed by the **global
+    /// `AbilityId`** the wire carries — how the client learns what kind of `Aim`
+    /// to build when a slot's key is pressed.
+    pub fn aiming_by_id(&self) -> impl Iterator<Item = (AbilityId, &Targeting)> {
+        self.aiming.iter().map(|(id, mode)| (*id, mode))
     }
 
     /// The map geometry the loaded gameplay mods declared, in load order. Empty
