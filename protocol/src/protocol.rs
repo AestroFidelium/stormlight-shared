@@ -90,6 +90,11 @@ impl Plugin for ProtocolPlugin {
         // when to contest them. The two ride different entities for that reason.
         crate::progression::register(app);
 
+        // Talent picking (stormlight/server#63): the player's choice of talent
+        // within a tier, and the owner-scoped view of which tiers are open, what
+        // has been taken, and what is still waiting on them.
+        crate::talents::register(app);
+
         // Player move orders (stormlight/server#47): a client asks its controlled
         // unit to walk to a ground point; the server moves it authoritatively and
         // replicates the Transform like any mover.

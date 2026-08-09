@@ -16,4 +16,5 @@ mod progression;
 mod projectile;
 mod quantize;
 mod slots;
+mod talent_pick;
 mod vitals;
