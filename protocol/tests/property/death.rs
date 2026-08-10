@@ -40,8 +40,8 @@ fn the_state_costs_a_unit_next_to_nothing_to_carry() {
         // One discriminant and no payload: the frame grows by a single byte over
         // the data it rides with, whichever state it is in.
         let bare = bincode::serde::encode_to_vec(s.padding, cfg).expect("padding should encode");
-        let with_state = bincode::serde::encode_to_vec((s.padding, state), cfg)
-            .expect("the pair should encode");
+        let with_state =
+            bincode::serde::encode_to_vec((s.padding, state), cfg).expect("the pair should encode");
         assert_eq!(
             with_state.len(),
             bare.len() + 1,

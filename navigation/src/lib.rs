@@ -36,7 +36,6 @@ use bevy::prelude::*;
 use polyanya::{Mesh, Triangulation};
 use stormlight_mod_abi::navmesh::NavMeshDescriptor;
 
-
 /// How far short of a walkable boundary a fallback destination is placed, world
 /// units. Small enough to be visually "right there", large enough that the point
 /// is unambiguously inside the region.
@@ -46,6 +45,18 @@ const EDGE_MARGIN: f32 = 0.05;
 /// the route is given up on. `PULLBACK_STEPS * EDGE_MARGIN` is the total distance
 /// — comfortably past the router's own point-location tolerance.
 const PULLBACK_STEPS: u32 = 8;
+
+/// How many rays [`NavMesh::search_outward`] fans around a destination that sits
+/// in solid ground, and how many samples each marches before giving up. The
+/// product is the worst-case cost of one refused move order — paid per *order*,
+/// never per tick.
+const SEARCH_RAYS: u32 = 32;
+const SEARCH_STEPS: u32 = 32;
+
+/// How many bisection rounds refine a ray's first walkable sample down onto the
+/// boundary it crossed. Twelve halvings take a map-wide first step under a
+/// millimetre, well past what any mover can express.
+const SEARCH_REFINE: u32 = 12;
 
 /// The closest a derived starting position may sit to the map's centre, as a
 /// fraction of the region's smaller half-extent. A floor, not a target: it only
@@ -99,9 +110,10 @@ impl NavMesh {
         if descriptor.agent_radius > 0.0 {
             triangulation.set_agent_radius(descriptor.agent_radius);
         }
-        let bounds = outline.iter().fold((Vec2::splat(f32::MAX), Vec2::splat(f32::MIN)), |(min, max), p| {
-            (min.min(*p), max.max(*p))
-        });
+        let bounds =
+            outline.iter().fold((Vec2::splat(f32::MAX), Vec2::splat(f32::MIN)), |(min, max), p| {
+                (min.min(*p), max.max(*p))
+            });
         let mut mesh = triangulation.as_navmesh();
         // Pre-compute the search acceleration once, at bake, instead of paying it
         // on the first query in the middle of a tick.
@@ -139,15 +151,98 @@ impl NavMesh {
     }
 
     /// The closest point inside the walkable region — the point itself when it is
-    /// already inside. `None` only when the region is unreachable from `point`
-    /// within the mesh's own search radius; [`Self::reachable_from`] is the total
-    /// version used for destinations.
+    /// already inside. `None` only when no ground was found anywhere around
+    /// `point`; [`Self::reachable_from`] is the total version used for
+    /// destinations.
+    ///
+    /// The router's own nearest-point query only searches a fraction of a unit out
+    /// (its point-location tolerance, which must stay tight or a destination would
+    /// locate *through* a wall), so it answers for a point that merely grazes an
+    /// edge and gives up on one clicked into the middle of a building. That case
+    /// is not exotic — it is where a player clicks — so a miss falls through to
+    /// [`Self::search_outward`], which looks as far as the map is wide.
     #[must_use]
     pub fn nearest_walkable(&self, point: Vec2) -> Option<Vec2> {
         if self.mesh.point_in_mesh(point) {
             return Some(point);
         }
-        self.mesh.get_closest_point(point).map(|coords| coords.position())
+        self.mesh
+            .get_closest_point(point)
+            .map(|coords| coords.position())
+            .or_else(|| self.search_outward(point))
+    }
+
+    /// The nearest walkable ground to `from`, found by growing a ring of
+    /// [`SEARCH_RAYS`] samples out of it and taking the closest boundary crossed by
+    /// the **first ring that reaches ground at all**.
+    ///
+    /// This is what makes "walk as close to where I clicked as you can" true of the
+    /// *whole map* rather than of the unit's own side of a wall: a click buried in a
+    /// building resolves to the ground nearest **the click**, so ordering a unit into
+    /// the far face of a keep walks it around the keep, instead of stopping at the
+    /// near face or — worse — reading as no order at all.
+    ///
+    /// Growing the whole ring together, rather than marching each ray to exhaustion
+    /// in turn, is what makes the answer the *nearest* one: a ray that strikes ground
+    /// far out can never mask a nearer crossing on a ray tested later. It also ends
+    /// the search at the first ring that hits, which for an ordinary click is a
+    /// couple of rings — the far rings are only ever paid for by a click with no
+    /// ground anywhere near it.
+    ///
+    /// `None` for a point with no walkable ground within the region's own extent,
+    /// which is a degenerate map rather than a normal click.
+    #[must_use]
+    fn search_outward(&self, from: Vec2) -> Option<Vec2> {
+        let (min, max) = self.bounds;
+        // Nothing walkable can be further away than the region is wide.
+        let reach = (max - min).length().max(f32::EPSILON);
+        let mut previous = 0.0_f32;
+        for step in 1..=SEARCH_STEPS {
+            let distance = reach * step as f32 / SEARCH_STEPS as f32;
+            let mut best: Option<(f32, Vec2)> = None;
+            for ray in 0..SEARCH_RAYS {
+                let angle = std::f32::consts::TAU * ray as f32 / SEARCH_RAYS as f32;
+                let (sin, cos) = angle.sin_cos();
+                let dir = Vec2::new(cos, sin);
+                if !self.mesh.point_in_mesh(from + dir * distance) {
+                    continue;
+                }
+                // This ray crossed onto the region somewhere in the last span; find
+                // where, and keep the nearest crossing this ring produced.
+                let hit = self.refine_crossing(from, dir, previous, distance);
+                let found = from.distance(hit);
+                if best.is_none_or(|(closest, _)| found < closest) {
+                    best = Some((found, hit));
+                }
+            }
+            if let Some((_, hit)) = best {
+                return Some(hit);
+            }
+            previous = distance;
+        }
+        None
+    }
+
+    /// Bisect a ray's crossing: `inside` is a distance along `dir` known walkable,
+    /// `outside` one known not to be. Returns a point clear of the boundary rather
+    /// than on it, where a unit would stand half in the wall and the router may
+    /// refuse to place a destination at all.
+    ///
+    /// The clearance has to exceed the router's own point-location tolerance: the
+    /// walkability test accepts anything within that tolerance of a polygon, so the
+    /// bisection converges onto a boundary that is itself up to a tolerance inside
+    /// the obstacle. Stepping out by less would hand back a point in solid ground.
+    fn refine_crossing(&self, from: Vec2, dir: Vec2, outside: f32, inside: f32) -> Vec2 {
+        let (mut lo, mut hi) = (outside, inside);
+        for _ in 0..SEARCH_REFINE {
+            let mid = f32::midpoint(lo, hi);
+            if self.mesh.point_in_mesh(from + dir * mid) {
+                hi = mid;
+            } else {
+                lo = mid;
+            }
+        }
+        from + dir * (hi + self.mesh.search_delta() + EDGE_MARGIN)
     }
 
     /// The point closest to `target` that lies inside the walkable region, seen
@@ -156,11 +251,12 @@ impl NavMesh {
     /// router will actually accept the result as a destination.
     ///
     /// A player may click anywhere — the middle of a building, off the map — and
-    /// the answer must never be "nothing happens". The mesh's own outward search
-    /// handles a target just past an edge; for one buried deep inside an obstacle
-    /// it cannot reach, this walks the segment from the anchor toward the target
-    /// and stops at the last walkable point, which is exactly "get as close to
-    /// where I clicked as the geometry allows".
+    /// the answer must never be "nothing happens". [`Self::nearest_walkable`]
+    /// answers for any click with ground somewhere around it, which is the reading
+    /// a player expects: the destination is the ground nearest **their click**,
+    /// even when that means walking around the far side of the building. The
+    /// segment walk below is the last resort for a click with no ground anywhere
+    /// near it, and stops at the last walkable point on the way there.
     #[must_use]
     pub fn reachable_from(&self, target: Vec2, anchor: Vec2) -> Vec2 {
         if let Some(point) = self.nearest_walkable(target) {

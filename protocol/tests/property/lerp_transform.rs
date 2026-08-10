@@ -48,17 +48,11 @@ fn endpoints_are_exact() {
         let a = translated(s.a);
         let b = translated(s.b);
         assert!(
-            lerp_transform(a, b, 0.0)
-                .translation
-                .distance(a.translation)
-                < 1e-3,
+            lerp_transform(a, b, 0.0).translation.distance(a.translation) < 1e-3,
             "t=0 must reproduce the start translation"
         );
         assert!(
-            lerp_transform(a, b, 1.0)
-                .translation
-                .distance(b.translation)
-                < 1e-3,
+            lerp_transform(a, b, 1.0).translation.distance(b.translation) < 1e-3,
             "t=1 must reproduce the end translation"
         );
     });
@@ -101,10 +95,7 @@ fn rotation_stays_unit_quaternion() {
         let b = Transform::from_rotation(unit_quat(s.qb));
         let t = t_of(s.t_seed);
         let len = lerp_transform(a, b, t).rotation.length();
-        assert!(
-            (len - 1.0).abs() < 1e-3,
-            "slerp output must stay a unit quaternion: |q|={len}"
-        );
+        assert!((len - 1.0).abs() < 1e-3, "slerp output must stay a unit quaternion: |q|={len}");
     });
 }
 

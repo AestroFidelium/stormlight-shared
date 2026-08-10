@@ -88,6 +88,5 @@ pub fn register(app: &mut App) {
     })
     .add_direction(NetworkDirection::ServerToClient);
 
-    app.register_event::<ProjectileFired>()
-        .add_direction(NetworkDirection::ServerToClient);
+    app.register_event::<ProjectileFired>().add_direction(NetworkDirection::ServerToClient);
 }

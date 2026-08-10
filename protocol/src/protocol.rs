@@ -37,7 +37,17 @@ impl Plugin for ProtocolPlugin {
             // authoritative one only when they diverge past a small epsilon, so a
             // smoothly predicted unit is not yanked by float noise every snapshot.
             .add_prediction()
-            .add_should_rollback(crate::movement::transform_should_rollback);
+            .add_should_rollback(crate::movement::transform_should_rollback)
+            // …and when it *does* roll back, ease the correction out instead of
+            // teleporting the hero onto it (stormlight/server#65). A rollback is a
+            // statement about the past; applying it to the present as a jump is what
+            // a player reads as their character "snapping". The error between where
+            // the hero was drawn and where it should have been decays over a couple
+            // of hundred milliseconds, so a divergence the client cannot predict —
+            // the server's local avoidance steering it around a body, say — is
+            // absorbed as a lean rather than a lurch. Inert on the server, which
+            // never predicts anything.
+            .add_linear_correction_fn::<Isometry3d>();
 
         // Representative per-unit state components, registered on both ends so
         // the `cube_demo` stress test can measure how replication scales past a

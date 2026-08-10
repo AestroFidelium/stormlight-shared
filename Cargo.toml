@@ -36,6 +36,9 @@ wasmtime = { version = "26", default-features = false }
 zip = "2"
 # Cross-repo: the mod ABI lives in the sibling `sdk` repo.
 stormlight_mod_abi = { path = "../sdk/schema" }
+# The walkable region both ends route over; the mover law needs the geometry it
+# is walking, so `protocol` depends on `navigation` and never the other way.
+stormlight_navigation = { path = "navigation" }
 bolero = "0.13"
 divan = "0.1"
 bincode = { version = "2.0.1", features = ["serde"] }

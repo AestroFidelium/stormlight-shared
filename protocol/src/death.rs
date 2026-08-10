@@ -80,6 +80,5 @@ impl LifeState {
 /// which is exactly the behaviour server-authoritative state wants. Pinned
 /// end-to-end by `crossbeam_death`, which reads both mirrors.
 pub fn register(app: &mut App) {
-    app.register_component::<LifeState>()
-        .add_interpolation_with(|_start, end, _t| end);
+    app.register_component::<LifeState>().add_interpolation_with(|_start, end, _t| end);
 }

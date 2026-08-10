@@ -137,7 +137,8 @@ fn ordinary_progress_reads_as_the_share_of_the_span_already_earned() {
         }
         // Halfway between the two thresholds is halfway along the bar — the one
         // reading a HUD actually depends on.
-        let midpoint = XpProgress { current: floor + (next - floor) / 2.0, floor, next: Some(next) };
+        let midpoint =
+            XpProgress { current: floor + (next - floor) / 2.0, floor, next: Some(next) };
         assert!(
             (midpoint.fraction() - 0.5).abs() <= 1e-4,
             "progress halfway to the next level did not draw as a half-full bar",

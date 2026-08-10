@@ -151,8 +151,10 @@ pub fn encode(t: &Transform) -> [u8; QUANTIZED_LEN] {
 /// input maps to a finite `Transform`.
 #[must_use]
 pub fn decode(bytes: &[u8; QUANTIZED_LEN]) -> Transform {
-    let i32_at = |o: usize| i32::from_be_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]]);
-    let u32_at = |o: usize| u32::from_be_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]]);
+    let i32_at =
+        |o: usize| i32::from_be_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]]);
+    let u32_at =
+        |o: usize| u32::from_be_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]]);
     let i16_at = |o: usize| i16::from_be_bytes([bytes[o], bytes[o + 1]]);
 
     let translation = Vec3::new(
@@ -166,11 +168,7 @@ pub fn decode(bytes: &[u8; QUANTIZED_LEN]) -> Transform {
         dequantize_axis(i16_at(18).into(), SCALE_RESOLUTION),
         dequantize_axis(i16_at(20).into(), SCALE_RESOLUTION),
     );
-    Transform {
-        translation,
-        rotation,
-        scale,
-    }
+    Transform { translation, rotation, scale }
 }
 
 /// Serialize a `Transform` into the Lightyear wire buffer using [`encode`].
@@ -194,8 +192,5 @@ fn deserialize(reader: &mut Reader) -> Result<Transform, SerializationError> {
 /// so replicated `Transform`s travel as the compact 22-byte frame.
 #[must_use]
 pub fn serialize_fns() -> SerializeFns<Transform> {
-    SerializeFns {
-        serialize,
-        deserialize,
-    }
+    SerializeFns { serialize, deserialize }
 }

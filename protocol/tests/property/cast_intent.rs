@@ -88,7 +88,9 @@ fn map_entities_only_rewrites_a_unit_aim() {
         mapped.map_entities(&mut Redirect(target));
         assert_eq!(mapped.slot, original.slot, "slot must never be remapped");
         match original.aim {
-            Aim::Unit(_) => assert_eq!(mapped.aim, Aim::Unit(target), "unit target must be remapped"),
+            Aim::Unit(_) => {
+                assert_eq!(mapped.aim, Aim::Unit(target), "unit target must be remapped")
+            }
             other => assert_eq!(mapped.aim, other, "non-unit aim must be untouched"),
         }
     });
