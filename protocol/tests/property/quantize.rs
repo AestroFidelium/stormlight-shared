@@ -51,11 +51,7 @@ fn transform_of(s: &Scenario) -> Transform {
     Transform {
         translation: Vec3::new(coord(s.pos.0), coord(s.pos.1), coord(s.pos.2)),
         rotation: unit_quat(s.quat),
-        scale: Vec3::new(
-            scale_factor(s.scale.0),
-            scale_factor(s.scale.1),
-            scale_factor(s.scale.2),
-        ),
+        scale: Vec3::new(scale_factor(s.scale.0), scale_factor(s.scale.1), scale_factor(s.scale.2)),
     }
 }
 

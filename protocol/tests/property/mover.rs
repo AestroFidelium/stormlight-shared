@@ -183,20 +183,27 @@ fn advance_faces_travel_when_turn_is_instant() {
 #[test]
 fn yaw_orients_forward_along_travel() {
     check!().with_type::<Kin>().for_each(|k| {
-        // The facing convention S1 relies on: rotating local `+X` by `yaw_to(d)`
-        // about `+Y` yields a world forward whose ground projection points along
+        // The facing convention: rotating the engine's **forward** by `yaw_to(d)`
+        // about `+Y` yields a world direction whose ground projection points along
         // `d`. This is what makes a unit written `Transform.rotation =
         // from_rotation_y(facing)` look where it walks — pinned here in the law,
         // independent of any ECS timing.
+        //
+        // Forward is `-Z`, which is Bevy's own (`Transform::forward`, and what
+        // `looking_at` points at a target). It used to be `+X`, and every model
+        // authored the ordinary way therefore ran a quarter turn off — the hero
+        // walked sideways across the field (stormlight/server#65). The engine
+        // agreeing with the engine it is built on is what makes standard art work
+        // without a per-model correction.
         let d = Vec2::new(coord(k.gx) - coord(k.px), coord(k.gz) - coord(k.pz));
         if d.length() < 1.0 {
             return;
         }
-        let fwd = Quat::from_rotation_y(yaw_to(d)) * Vec3::X;
+        let fwd = Quat::from_rotation_y(yaw_to(d)) * Vec3::NEG_Z;
         let fwd_ground = Vec2::new(fwd.x, fwd.z).normalize_or_zero();
         assert!(
             fwd_ground.dot(d.normalize()) > 0.999,
-            "yaw_to did not orient +X along the travel direction (dot {})",
+            "yaw_to did not orient forward along the travel direction (dot {})",
             fwd_ground.dot(d.normalize()),
         );
     });

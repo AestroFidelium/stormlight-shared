@@ -33,6 +33,7 @@ fn sample() -> ClientRegistration {
                 asset: format!("mod://{MOD_ID}/{ASSET_PATH}"),
                 // Integer-valued so equality is exact after decode.
                 scale: 2.0,
+                yaw_offset: 0.0,
             },
         }],
         effects: Vec::new(),
@@ -89,7 +90,7 @@ fn a_cosmetic_mod_loads_and_exposes_its_visual_and_asset() {
 
     // The declared visual is retrievable by the unit's stable name.
     match host.visual("hero") {
-        Some(VisualModel::Model { asset, scale }) => {
+        Some(VisualModel::Model { asset, scale, .. }) => {
             assert_eq!(asset, &format!("mod://{MOD_ID}/{ASSET_PATH}"));
             assert_eq!(*scale, 2.0);
         }

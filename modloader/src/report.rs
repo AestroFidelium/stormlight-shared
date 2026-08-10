@@ -28,6 +28,11 @@ pub fn describe(path: &Path) -> Result<String> {
     let _ = writeln!(out, "  talents:   {}", reg.talents.len());
     let _ = writeln!(out, "  buffs:     {}", reg.buffs.len());
     let _ = writeln!(out, "  curves:    {}", reg.curves.len());
-    let _ = writeln!(out, "  tags:      {} ({} class links)", reg.names.tags.len(), reg.tag_classes.len());
+    let _ = writeln!(
+        out,
+        "  tags:      {} ({} class links)",
+        reg.names.tags.len(),
+        reg.tag_classes.len()
+    );
     Ok(out)
 }

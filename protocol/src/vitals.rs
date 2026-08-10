@@ -78,22 +78,14 @@ impl ReplicatedVitals {
     pub fn new(hp: f32, max_hp: f32, shield: f32) -> Self {
         let finite = |v: f32| if v.is_finite() { v } else { 0.0 };
         let max_hp = finite(max_hp).max(0.0);
-        Self {
-            hp: finite(hp).clamp(0.0, max_hp),
-            max_hp,
-            shield: finite(shield).max(0.0),
-        }
+        Self { hp: finite(hp).clamp(0.0, max_hp), max_hp, shield: finite(shield).max(0.0) }
     }
 
     /// The fill fraction a health bar draws, in `[0, 1]`. A unit with no ceiling
     /// reads empty rather than dividing by zero.
     #[must_use]
     pub fn fraction(&self) -> f32 {
-        if self.max_hp > 0.0 {
-            (self.hp / self.max_hp).clamp(0.0, 1.0)
-        } else {
-            0.0
-        }
+        if self.max_hp > 0.0 { (self.hp / self.max_hp).clamp(0.0, 1.0) } else { 0.0 }
     }
 
     /// Whether health has been spent — the client-side read of "this unit is

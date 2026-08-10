@@ -17,4 +17,5 @@ mod projectile;
 mod quantize;
 mod slots;
 mod talent_pick;
+mod turn_rate;
 mod vitals;

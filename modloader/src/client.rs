@@ -189,10 +189,7 @@ impl ClientHost {
         // sending the wrong aim shape for that ability forever.
         for ability in &reg.abilities {
             let name = reg.names.abilities.get(ability.id.raw() as usize).ok_or_else(|| {
-                anyhow!(
-                    "ability descriptor {} has no name-table entry",
-                    ability.id.raw()
-                )
+                anyhow!("ability descriptor {} has no name-table entry", ability.id.raw())
             })?;
             let global = self
                 .ability_ids
@@ -241,8 +238,7 @@ impl ClientHost {
             let loaded = loader::load_dir(path)?;
             self.adopt(loaded, ModSource::Dir(path.to_path_buf()))
         } else {
-            let bytes =
-                fs::read(path).map_err(|e| anyhow!("reading {}: {e}", path.display()))?;
+            let bytes = fs::read(path).map_err(|e| anyhow!("reading {}: {e}", path.display()))?;
             self.load_zip_bytes(&bytes)
         }
     }

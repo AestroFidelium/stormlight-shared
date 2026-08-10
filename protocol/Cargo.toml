@@ -21,9 +21,14 @@ tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true }
 derive_more = { workspace = true }
 regex = { workspace = true }
+# The map the predicting client and the authoritative server both route over: the
+# mover law plans its corridor here, so one route is walked by both ends.
+stormlight_navigation = { workspace = true }
 
 [dev-dependencies]
 bincode = { workspace = true }
+# The map descriptor the corridor tests bake their fixture room from.
+stormlight_mod_abi = { workspace = true, features = ["std"] }
 bolero = { workspace = true }
 divan = { workspace = true }
 

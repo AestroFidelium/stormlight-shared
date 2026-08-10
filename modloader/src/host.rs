@@ -239,9 +239,7 @@ impl Host {
         store: &mut Store<StoreState>,
         instance: &Instance,
     ) -> Result<wasmtime::Memory> {
-        instance
-            .get_memory(store, "memory")
-            .ok_or_else(|| anyhow!("guest exports no `memory`"))
+        instance.get_memory(store, "memory").ok_or_else(|| anyhow!("guest exports no `memory`"))
     }
 }
 

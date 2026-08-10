@@ -24,10 +24,10 @@ fn traversal_and_bad_scheme_are_rejected() {
         "mod://base//x",
         "mod://base/",
         "mod://base/a\\b",
-        "mod:///x",       // empty id
-        "mod://BASE/x",   // invalid id charset
-        "file://base/x",  // wrong scheme
-        "base/x",         // no scheme
+        "mod:///x",      // empty id
+        "mod://BASE/x",  // invalid id charset
+        "file://base/x", // wrong scheme
+        "base/x",        // no scheme
     ] {
         assert!(parse_mod_url(bad).is_err(), "should reject `{bad}`");
     }
