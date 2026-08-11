@@ -5,4 +5,5 @@
 //! Keep invariants directional/structural, never magnitude-only.
 
 mod client_adopt;
+mod client_animation_adopt;
 mod client_effect_adopt;
