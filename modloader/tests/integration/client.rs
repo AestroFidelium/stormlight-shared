@@ -37,6 +37,7 @@ fn sample() -> ClientRegistration {
             },
         }],
         effects: Vec::new(),
+        animations: Vec::new(),
     }
 }
 

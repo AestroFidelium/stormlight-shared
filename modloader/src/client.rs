@@ -1,10 +1,13 @@
 //! The client-side cosmetic host — the `client.wasm` counterpart to [`crate::host`].
 //!
 //! A `*_client` mod (`kind = "client"`) is loaded here rather than on the server.
-//! Its guest emits a [`ClientRegistration`] of [`VisualModel`]s keyed by unit; the
-//! host runs that registration, [adopts](AdoptedVisuals::adopt) the visuals into a
-//! unit-name → model table the content-free client keys on, and resolves the
-//! mod's `mod://` assets through the shared [`Vfs`] (which rejects path traversal).
+//! Its guest emits a [`ClientRegistration`] of [`VisualModel`]s and
+//! [`AnimationDescriptor`]s keyed by unit; the host runs that registration,
+//! [adopts](AdoptedVisuals::adopt) them into unit-name → model / animation tables
+//! the content-free client keys on, and resolves the mod's `mod://` assets through
+//! the shared [`Vfs`] (which rejects path traversal). Adoption is also where an
+//! animation is structurally validated — the last point it can be refused with a
+//! reason instead of silently playing nothing.
 //!
 //! The engine still ships nothing: [`ClientHost`] only holds whatever a cosmetic
 //! mod declared. A unit with no declared visual simply has no entry — the client
@@ -16,6 +19,7 @@ use std::path::Path;
 
 use anyhow::{Result, anyhow, bail};
 use stormlight_mod_abi::abilities::Targeting;
+use stormlight_mod_abi::animation::{AnimState, AnimationDescriptor};
 use stormlight_mod_abi::ids::{AbilityId, Handle, UnitId};
 use stormlight_mod_abi::interner::Interner;
 use stormlight_mod_abi::manifest::{ABI_VERSION, ModKind};
@@ -34,16 +38,33 @@ use crate::vfs::{ModSource, Vfs};
 pub struct AdoptedVisuals {
     by_name: BTreeMap<String, VisualModel>,
     by_effect: BTreeMap<(String, EffectRole), VisualModel>,
+    by_animation: BTreeMap<String, AnimationDescriptor>,
+}
+
+/// Every semantic state an animation names, in declaration order — bindings
+/// first, then the transitions between them.
+fn states_of(anim: &AnimationDescriptor) -> impl Iterator<Item = AnimState> + '_ {
+    anim.layers.iter().flat_map(|layer| {
+        layer
+            .states
+            .iter()
+            .map(|binding| binding.state)
+            .chain(layer.transitions.iter().flat_map(|t| [t.from, t.to]))
+    })
 }
 
 impl AdoptedVisuals {
-    /// Build the visual tables from a decoded [`ClientRegistration`]: units keyed
-    /// by unit name, ability feedback keyed by `(ability name, role)`.
+    /// Build the cosmetic tables from a decoded [`ClientRegistration`]: unit
+    /// visuals and animations keyed by unit name, ability feedback keyed by
+    /// `(ability name, role)`.
     ///
-    /// Total over hostile input: a major ABI mismatch, a unit visual referencing a
-    /// unit handle with no [`names.units`](stormlight_mod_abi::descriptors::Names)
-    /// entry, or an effect visual referencing an ability handle with no
-    /// `names.abilities` entry (a dangling reference), is an `Err` — never a panic.
+    /// Total over hostile input — each of these is an `Err`, never a panic: a
+    /// major ABI mismatch; a visual or animation referencing a unit handle with no
+    /// [`names.units`](stormlight_mod_abi::descriptors::Names) entry; an effect
+    /// visual referencing an ability handle with no `names.abilities` entry; an
+    /// animation naming a custom state with no `names.anim_states` entry; and an
+    /// animation that fails
+    /// [`validate`](stormlight_mod_abi::animation::AnimationDescriptor::validate).
     /// When two entries name the same key the later one wins (deterministic,
     /// insertion order).
     pub fn adopt(reg: &ClientRegistration) -> Result<Self> {
@@ -71,7 +92,28 @@ impl AdoptedVisuals {
             })?;
             by_effect.insert((name.clone(), e.role), e.model.clone());
         }
-        Ok(Self { by_name, by_effect })
+        let mut by_animation = BTreeMap::new();
+        for a in &reg.animations {
+            let name = reg.names.units.get(a.unit.0 as usize).ok_or_else(|| {
+                anyhow!("animation references unit handle {} with no name-table entry", a.unit.0)
+            })?;
+            // Structural breakage is reported here or nowhere: past adoption the
+            // descriptor reaches a renderer that would silently play nothing.
+            a.validate().map_err(|e| anyhow!("animation for unit `{name}`: {e}"))?;
+            for state in states_of(a) {
+                if let AnimState::Custom(id) = state
+                    && reg.names.anim_states.get(id.raw() as usize).is_none()
+                {
+                    bail!(
+                        "animation for unit `{name}` names state handle {} \
+                         with no name-table entry",
+                        id.raw()
+                    );
+                }
+            }
+            by_animation.insert(name.clone(), a.clone());
+        }
+        Ok(Self { by_name, by_effect, by_animation })
     }
 
     /// The visual declared for the unit named `unit_name`, if any.
@@ -86,16 +128,28 @@ impl AdoptedVisuals {
         self.by_effect.get(&(ability_name.to_string(), role))
     }
 
+    /// The animation declared for the unit named `unit_name`, if any.
+    #[must_use]
+    pub fn animation(&self, unit_name: &str) -> Option<&AnimationDescriptor> {
+        self.by_animation.get(unit_name)
+    }
+
+    /// Iterate the `(unit name, animation)` pairs, in unit-name order.
+    pub fn animations(&self) -> impl Iterator<Item = (&String, &AnimationDescriptor)> {
+        self.by_animation.iter()
+    }
+
     /// Number of units this mod dresses.
     #[must_use]
     pub fn len(&self) -> usize {
         self.by_name.len()
     }
 
-    /// Whether this mod declares no visuals at all (neither units nor effects).
+    /// Whether this mod declares nothing at all — no unit visual, no effect
+    /// visual, no animation.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.by_name.is_empty() && self.by_effect.is_empty()
+        self.by_name.is_empty() && self.by_effect.is_empty() && self.by_animation.is_empty()
     }
 
     /// Iterate the `(unit name, visual)` pairs, in unit-name order.
@@ -117,6 +171,7 @@ pub struct ClientHost {
     vfs: Vfs,
     visuals: BTreeMap<String, VisualModel>,
     effects: BTreeMap<(String, EffectRole), VisualModel>,
+    animations: BTreeMap<String, AnimationDescriptor>,
     /// The gameplay-side name→global-id maps, rebuilt from each loaded gameplay
     /// mod's `Names` in load order — the same interning server adoption does, so
     /// a cosmetic's name resolves to the id the wire carries (`UnitTag` / `vfx`).
@@ -146,6 +201,7 @@ impl ClientHost {
             vfs: Vfs::new(),
             visuals: BTreeMap::new(),
             effects: BTreeMap::new(),
+            animations: BTreeMap::new(),
             unit_ids: Interner::new(),
             ability_ids: Interner::new(),
             aiming: BTreeMap::new(),
@@ -265,6 +321,9 @@ impl ClientHost {
         for (key, model) in adopted.effects() {
             self.effects.insert(key.clone(), model.clone());
         }
+        for (name, animation) in adopted.animations() {
+            self.animations.insert(name.clone(), animation.clone());
+        }
         self.vfs.insert(loaded.manifest.id, source);
         Ok(())
     }
@@ -320,5 +379,20 @@ impl ClientHost {
     #[must_use]
     pub fn effect_count(&self) -> usize {
         self.effects.len()
+    }
+
+    /// The animation a loaded cosmetic mod declared for the unit named
+    /// `unit_name`, or `None` if none did (the unit then stands still).
+    #[must_use]
+    pub fn animation(&self, unit_name: &str) -> Option<&AnimationDescriptor> {
+        self.animations.get(unit_name)
+    }
+
+    /// Every adopted animation keyed by the **global `UnitId`** the wire uses,
+    /// resolved through the name→id map [`load_gameplay`](Self::load_gameplay)
+    /// built — the same bridge [`visuals_by_id`](Self::visuals_by_id) crosses. An
+    /// animation for a unit no loaded gameplay mod defines is skipped.
+    pub fn animations_by_id(&self) -> impl Iterator<Item = (UnitId, &AnimationDescriptor)> {
+        self.animations.iter().filter_map(|(name, anim)| Some((self.unit_ids.get(name)?, anim)))
     }
 }

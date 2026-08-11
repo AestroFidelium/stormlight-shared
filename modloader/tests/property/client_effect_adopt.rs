@@ -55,6 +55,7 @@ fn build(s: &Scenario) -> (ClientRegistration, Vec<(usize, EffectRole)>) {
         names: Names { abilities, ..Names::default() },
         visuals: Vec::new(),
         effects,
+        animations: Vec::new(),
     };
     (reg, keys)
 }

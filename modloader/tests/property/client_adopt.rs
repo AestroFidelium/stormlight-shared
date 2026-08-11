@@ -44,6 +44,7 @@ fn build(s: &Scenario) -> (ClientRegistration, Vec<usize>) {
         names: Names { units, ..Names::default() },
         visuals,
         effects: Vec::new(),
+        animations: Vec::new(),
     };
     (reg, idx)
 }
