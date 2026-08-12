@@ -24,6 +24,7 @@ use stormlight_mod_abi::ids::{AbilityId, Handle, UnitId};
 use stormlight_mod_abi::interner::Interner;
 use stormlight_mod_abi::manifest::{ABI_VERSION, ModKind};
 use stormlight_mod_abi::navmesh::NavMeshDescriptor;
+use stormlight_mod_abi::notify::{NotifyAction, NotifyPoint};
 use stormlight_mod_abi::visuals::{ClientRegistration, EffectRole, VisualModel};
 
 use crate::host::Host;
@@ -39,6 +40,32 @@ pub struct AdoptedVisuals {
     by_name: BTreeMap<String, VisualModel>,
     by_effect: BTreeMap<(String, EffectRole), VisualModel>,
     by_animation: BTreeMap<String, AnimationDescriptor>,
+    by_notify_key: BTreeMap<String, VisualModel>,
+}
+
+/// A cosmetic effect key, qualified with the package that declared it
+/// (`"<mod id>/<name>"`).
+///
+/// Notify keys are named by the mod itself, so two packages both shipping a
+/// `footstep` would fight over one entry the moment their tables are merged.
+/// Qualifying at adoption gives each package its own namespace — the same thing
+/// `mod://<id>/…` does for assets — and keeps a key resolving to the effect its
+/// own author declared.
+fn qualify(mod_id: &str, key: &str) -> String {
+    format!("{mod_id}/{key}")
+}
+
+/// Every notify point an animation declares, in declaration order.
+fn notifies_of(anim: &AnimationDescriptor) -> impl Iterator<Item = &NotifyPoint> {
+    anim.layers.iter().flat_map(|layer| layer.states.iter()).flat_map(|s| s.notifies.iter())
+}
+
+/// The same, mutably — how adoption rewrites the keys in place.
+fn notifies_of_mut(anim: &mut AnimationDescriptor) -> impl Iterator<Item = &mut NotifyPoint> {
+    anim.layers
+        .iter_mut()
+        .flat_map(|layer| layer.states.iter_mut())
+        .flat_map(|s| s.notifies.iter_mut())
 }
 
 /// Every semantic state an animation names, in declaration order — bindings
@@ -64,10 +91,15 @@ impl AdoptedVisuals {
     /// visual referencing an ability handle with no `names.abilities` entry; an
     /// animation naming a custom state with no `names.anim_states` entry; and an
     /// animation that fails
-    /// [`validate`](stormlight_mod_abi::animation::AnimationDescriptor::validate).
+    /// [`validate`](stormlight_mod_abi::animation::AnimationDescriptor::validate);
+    /// and a notify announcing a mod-defined event with no `names.events` entry.
     /// When two entries name the same key the later one wins (deterministic,
     /// insertion order).
-    pub fn adopt(reg: &ClientRegistration) -> Result<Self> {
+    ///
+    /// `mod_id` is the declaring package, which every cosmetic effect key is
+    /// [qualified](qualify) with — both in the table and inside the notifies that
+    /// name them, so the adopted animations are keyed the way the merged table is.
+    pub fn adopt(reg: &ClientRegistration, mod_id: &str) -> Result<Self> {
         if reg.abi.major != ABI_VERSION.major {
             bail!(
                 "cosmetic registration abi major {} != engine {}",
@@ -111,9 +143,32 @@ impl AdoptedVisuals {
                     );
                 }
             }
-            by_animation.insert(name.clone(), a.clone());
+            for point in notifies_of(a) {
+                if let NotifyAction::Trigger { event } = point.action
+                    && reg.names.events.get(event.raw() as usize).is_none()
+                {
+                    bail!(
+                        "animation for unit `{name}` announces event handle {} \
+                         with no name-table entry",
+                        event.raw()
+                    );
+                }
+            }
+            // Rewrite each notify's key into the package-qualified form the merged
+            // table is keyed by. Done here, once, rather than at every lookup: the
+            // renderer holds the descriptor for the character's whole life and has
+            // no idea which package it came from.
+            let mut adopted = a.clone();
+            for point in notifies_of_mut(&mut adopted) {
+                if let NotifyAction::Effect { key, .. } = &mut point.action {
+                    *key = qualify(mod_id, key);
+                }
+            }
+            by_animation.insert(name.clone(), adopted);
         }
-        Ok(Self { by_name, by_effect, by_animation })
+        let by_notify_key =
+            reg.named_effects.iter().map(|e| (qualify(mod_id, &e.name), e.model.clone())).collect();
+        Ok(Self { by_name, by_effect, by_animation, by_notify_key })
     }
 
     /// The visual declared for the unit named `unit_name`, if any.
@@ -134,6 +189,18 @@ impl AdoptedVisuals {
         self.by_animation.get(unit_name)
     }
 
+    /// The cosmetic effect declared under the package-qualified `key`, if any —
+    /// what an animation notify spawns (server#76).
+    #[must_use]
+    pub fn named_effect(&self, key: &str) -> Option<&VisualModel> {
+        self.by_notify_key.get(key)
+    }
+
+    /// Iterate the `(qualified key, effect)` pairs, in key order.
+    pub fn named_effects(&self) -> impl Iterator<Item = (&String, &VisualModel)> {
+        self.by_notify_key.iter()
+    }
+
     /// Iterate the `(unit name, animation)` pairs, in unit-name order.
     pub fn animations(&self) -> impl Iterator<Item = (&String, &AnimationDescriptor)> {
         self.by_animation.iter()
@@ -146,10 +213,13 @@ impl AdoptedVisuals {
     }
 
     /// Whether this mod declares nothing at all — no unit visual, no effect
-    /// visual, no animation.
+    /// visual, no animation, no notify effect.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.by_name.is_empty() && self.by_effect.is_empty() && self.by_animation.is_empty()
+        self.by_name.is_empty()
+            && self.by_effect.is_empty()
+            && self.by_animation.is_empty()
+            && self.by_notify_key.is_empty()
     }
 
     /// Iterate the `(unit name, visual)` pairs, in unit-name order.
@@ -172,6 +242,9 @@ pub struct ClientHost {
     visuals: BTreeMap<String, VisualModel>,
     effects: BTreeMap<(String, EffectRole), VisualModel>,
     animations: BTreeMap<String, AnimationDescriptor>,
+    /// Cosmetic effects an animation notify spawns (server#76), keyed by the
+    /// package-qualified name their declaring mod gave them.
+    notify_effects: BTreeMap<String, VisualModel>,
     /// The gameplay-side name→global-id maps, rebuilt from each loaded gameplay
     /// mod's `Names` in load order — the same interning server adoption does, so
     /// a cosmetic's name resolves to the id the wire carries (`UnitTag` / `vfx`).
@@ -202,6 +275,7 @@ impl ClientHost {
             visuals: BTreeMap::new(),
             effects: BTreeMap::new(),
             animations: BTreeMap::new(),
+            notify_effects: BTreeMap::new(),
             unit_ids: Interner::new(),
             ability_ids: Interner::new(),
             aiming: BTreeMap::new(),
@@ -313,7 +387,7 @@ impl ClientHost {
             bail!("mod `{}` is not a client (cosmetic) mod", loaded.manifest.id);
         }
         let reg = self.host.register_client(&loaded.wasm)?;
-        let adopted = AdoptedVisuals::adopt(&reg)?;
+        let adopted = AdoptedVisuals::adopt(&reg, &loaded.manifest.id)?;
         // Merge into the combined tables; a later mod overrides an earlier entry.
         for (name, model) in adopted.iter() {
             self.visuals.insert(name.clone(), model.clone());
@@ -323,6 +397,11 @@ impl ClientHost {
         }
         for (name, animation) in adopted.animations() {
             self.animations.insert(name.clone(), animation.clone());
+        }
+        // Keys are already package-qualified, so two mods never overwrite each
+        // other here — the merge is a union, not a race.
+        for (key, model) in adopted.named_effects() {
+            self.notify_effects.insert(key.clone(), model.clone());
         }
         self.vfs.insert(loaded.manifest.id, source);
         Ok(())
@@ -386,6 +465,15 @@ impl ClientHost {
     #[must_use]
     pub fn animation(&self, unit_name: &str) -> Option<&AnimationDescriptor> {
         self.animations.get(unit_name)
+    }
+
+    /// Every cosmetic effect an animation notify can spawn, keyed by the
+    /// package-qualified name (server#76) — how the client fills the table its
+    /// notify runtime resolves against. Unlike the unit and ability tables this
+    /// needs no id bridge: the key never crosses the wire, and is resolved only
+    /// against the animation that named it.
+    pub fn named_effects(&self) -> impl Iterator<Item = (&String, &VisualModel)> {
+        self.notify_effects.iter()
     }
 
     /// Every adopted animation keyed by the **global `UnitId`** the wire uses,

@@ -56,6 +56,7 @@ fn build(s: &Scenario) -> (ClientRegistration, Vec<(usize, EffectRole)>) {
         visuals: Vec::new(),
         effects,
         animations: Vec::new(),
+        named_effects: Vec::new(),
     };
     (reg, keys)
 }
@@ -65,7 +66,7 @@ fn a_dangling_ability_handle_is_rejected_not_panicked() {
     check!().with_type::<Scenario>().for_each(|s| {
         let (reg, keys) = build(s);
         let any_dangling = keys.iter().any(|&(i, _)| i >= usize::from(s.names_len));
-        let adopted = AdoptedVisuals::adopt(&reg);
+        let adopted = AdoptedVisuals::adopt(&reg, "pack");
         assert_eq!(
             adopted.is_err(),
             any_dangling,
@@ -78,7 +79,7 @@ fn a_dangling_ability_handle_is_rejected_not_panicked() {
 fn every_adopted_effect_is_reachable_by_ability_name_and_role() {
     check!().with_type::<Scenario>().for_each(|s| {
         let (reg, keys) = build(s);
-        if let Ok(adopted) = AdoptedVisuals::adopt(&reg) {
+        if let Ok(adopted) = AdoptedVisuals::adopt(&reg, "pack") {
             for &(i, role) in &keys {
                 let name = format!("a{i}");
                 assert!(

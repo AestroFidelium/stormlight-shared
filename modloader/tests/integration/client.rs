@@ -38,6 +38,7 @@ fn sample() -> ClientRegistration {
         }],
         effects: Vec::new(),
         animations: Vec::new(),
+        named_effects: Vec::new(),
     }
 }
 
