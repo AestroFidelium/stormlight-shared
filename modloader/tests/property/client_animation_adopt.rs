@@ -59,6 +59,7 @@ fn an_animation(unit: u32, state: AnimState, empty: bool) -> AnimationDescriptor
                     blend_out: 0.1,
                     rate: RateBinding::Fixed(1.0),
                     priority: 0,
+                    notifies: Vec::new(),
                 }]
             },
             transitions: Vec::new(),
@@ -108,6 +109,7 @@ fn build(s: &Scenario) -> Built {
             visuals: Vec::new(),
             effects: Vec::new(),
             animations,
+            named_effects: Vec::new(),
         },
         units: unit_idx,
         states: state_idx,
@@ -122,7 +124,7 @@ fn a_dangling_handle_or_broken_layer_is_rejected_not_panicked() {
         let dangling_state = b.states.iter().any(|&i| i >= usize::from(s.states));
         let broken = s.empty_layer && !b.reg.animations.is_empty();
 
-        let adopted = AdoptedVisuals::adopt(&b.reg);
+        let adopted = AdoptedVisuals::adopt(&b.reg, "pack");
         assert_eq!(
             adopted.is_err(),
             dangling_unit || dangling_state || broken,
@@ -135,7 +137,7 @@ fn a_dangling_handle_or_broken_layer_is_rejected_not_panicked() {
 fn every_adopted_animation_is_reachable_by_unit_name() {
     check!().with_type::<Scenario>().for_each(|s| {
         let b = build(s);
-        if let Ok(adopted) = AdoptedVisuals::adopt(&b.reg) {
+        if let Ok(adopted) = AdoptedVisuals::adopt(&b.reg, "pack") {
             for &i in &b.units {
                 let name = format!("u{i}");
                 assert!(
@@ -152,6 +154,7 @@ fn a_bundle_with_no_animations_adopts_cleanly() {
     // Additive over one file: every cosmetic mod written before animation existed
     // must still load, with an empty animation table.
     let reg = ClientRegistration { abi: ABI_VERSION, ..ClientRegistration::default() };
-    let adopted = AdoptedVisuals::adopt(&reg).expect("an animation-free bundle still adopts");
+    let adopted =
+        AdoptedVisuals::adopt(&reg, "pack").expect("an animation-free bundle still adopts");
     assert!(adopted.animations().next().is_none(), "no animations were declared");
 }

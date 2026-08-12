@@ -45,6 +45,7 @@ fn build(s: &Scenario) -> (ClientRegistration, Vec<usize>) {
         visuals,
         effects: Vec::new(),
         animations: Vec::new(),
+        named_effects: Vec::new(),
     };
     (reg, idx)
 }
@@ -54,7 +55,7 @@ fn a_dangling_unit_handle_is_rejected_not_panicked() {
     check!().with_type::<Scenario>().for_each(|s| {
         let (reg, idx) = build(s);
         let any_dangling = idx.iter().any(|&i| i >= usize::from(s.names_len));
-        let adopted = AdoptedVisuals::adopt(&reg);
+        let adopted = AdoptedVisuals::adopt(&reg, "pack");
         assert_eq!(
             adopted.is_err(),
             any_dangling,
@@ -67,7 +68,7 @@ fn a_dangling_unit_handle_is_rejected_not_panicked() {
 fn every_adopted_visual_is_reachable_by_unit_name() {
     check!().with_type::<Scenario>().for_each(|s| {
         let (reg, idx) = build(s);
-        if let Ok(adopted) = AdoptedVisuals::adopt(&reg) {
+        if let Ok(adopted) = AdoptedVisuals::adopt(&reg, "pack") {
             for &i in &idx {
                 let name = format!("u{i}");
                 assert!(
