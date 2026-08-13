@@ -14,4 +14,5 @@ pub mod host;
 pub mod loader;
 pub mod registry;
 pub mod report;
+pub mod ui_map;
 pub mod vfs;
