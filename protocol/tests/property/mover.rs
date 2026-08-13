@@ -10,7 +10,8 @@ use core::f32::consts::{PI, TAU};
 use bevy::math::{Quat, Vec2, Vec3};
 use bolero::{TypeGenerator, check};
 use stormlight_shared::movement::{
-    advance_mover, angle_delta, face_travel, step_toward, turn_toward, wrap_angle, yaw_to,
+    MIN_FACING_SPEED, advance_mover, angle_delta, face_travel, step_toward, turn_toward,
+    wrap_angle, yaw_to,
 };
 
 #[derive(Debug, TypeGenerator)]
@@ -171,7 +172,11 @@ fn advance_faces_travel_when_turn_is_instant() {
         // An "instant" turn rate must align facing with the direction of travel.
         let m = advance_mover(s.pos, s.facing, s.goal, s.speed, f32::INFINITY, s.dt);
         let travel = m.pos - s.pos;
-        if travel.length() > 1e-2 {
+        // Only travel fast enough to *be* a heading re-aims the unit: below
+        // `MIN_FACING_SPEED` the direction is noise and the mover keeps its facing
+        // on purpose, so a distance alone is not the right guard here — a
+        // centimetre covered over a whole second is not a direction.
+        if travel.length() / s.dt >= MIN_FACING_SPEED {
             assert!(
                 angle_delta(m.facing, yaw_to(travel)).abs() < 1e-3,
                 "instant facing did not align with travel",
