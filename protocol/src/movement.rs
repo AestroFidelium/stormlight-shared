@@ -51,6 +51,15 @@ pub fn register(app: &mut App) {
     // authoritative speed on its ghost to advance at the right rate. Inert on the
     // server (no prediction runs there).
     app.register_component::<MoveSpeed>().add_prediction();
+
+    // And the turn rate, for the same reason and with the same consequence if it is
+    // missing. `predict_movement` reads an `Option<&TurnRate>`, so a component that
+    // never crosses the wire is not "absent" on the client — it is *silently the
+    // engine default*, while the server turns the same unit at whatever its content
+    // declared. The two halves then disagree by a fixed factor on every tick the
+    // unit is turning, and the correction reconciling them is what a player sees as
+    // the model snapping round in steps instead of sweeping.
+    app.register_component::<TurnRate>().add_prediction();
 }
 
 // ---------------------------------------------------------------------------
@@ -130,17 +139,36 @@ pub fn yaw_to(dir: Vec2) -> f32 {
     if dir.length_squared() <= f32::EPSILON { 0.0 } else { (-dir.x).atan2(-dir.y) }
 }
 
+/// Below this ground speed a mover is not going anywhere, and the direction of what
+/// little it covered is noise rather than a heading (world units per second).
+///
+/// It is a **speed** and not a distance because the same sliver of travel means
+/// different things over a long tick and a short one; only dividing by the tick
+/// says whether the unit is moving.
+///
+/// The number this replaced was `f32::EPSILON` on the squared length — small enough
+/// that a nanometre of drift counted as a direction. That is not a hypothetical:
+/// realized travel is what local avoidance (server#51) leaves after steering, and
+/// against an obstacle or on the last step into a goal it shrinks toward nothing
+/// while its direction keeps swinging. The unit then chases a heading that is
+/// re-rolled every tick and visibly twitches on the spot.
+pub const MIN_FACING_SPEED: f32 = 0.25;
+
 /// Turn `facing` toward the direction a mover actually travelled this tick, at
-/// `turn_rate` radians/second. A mover that did not move keeps its heading —
-/// there is no travel direction to face, and snapping to a default would spin a
-/// resting unit. Pure.
+/// `turn_rate` radians/second. A mover that did not meaningfully move keeps its
+/// heading — there is no travel direction to face, and snapping to a default would
+/// spin a resting unit. Pure.
 ///
 /// Split out of [`advance_mover`] because a mover's realized travel is not always
 /// its straight step toward the goal: local avoidance (server#51) steers it, and
-/// the unit must face where it *went*, not where it wanted to go.
+/// the unit must face where it *went*, not where it wanted to go. That is also why
+/// the heading is only taken from travel above [`MIN_FACING_SPEED`]: the same
+/// steering that makes realized travel the honest source makes it a noisy one at
+/// the point the mover is nearly stationary.
 #[must_use]
 pub fn face_travel(facing: f32, travel: Vec2, turn_rate: f32, dt: f32) -> f32 {
-    let desired = if travel.length_squared() > f32::EPSILON { yaw_to(travel) } else { facing };
+    let moving = dt > 0.0 && dt.is_finite() && travel.length() / dt >= MIN_FACING_SPEED;
+    let desired = if moving { yaw_to(travel) } else { facing };
     turn_toward(facing, desired, turn_rate, dt)
 }
 
