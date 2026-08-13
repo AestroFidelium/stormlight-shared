@@ -97,8 +97,7 @@ fn cosmetic(unit_name: &str, ability_name: &str) -> Vec<u8> {
             role: EffectRole::Projectile,
             model: model(0.9),
         }],
-        animations: Vec::new(),
-        named_effects: Vec::new(),
+        ..ClientRegistration::default()
     };
     package("cosmetic", "client", &postcard::to_allocvec(&reg).unwrap())
 }

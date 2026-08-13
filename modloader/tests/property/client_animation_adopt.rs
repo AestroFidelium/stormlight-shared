@@ -106,10 +106,8 @@ fn build(s: &Scenario) -> Built {
         reg: ClientRegistration {
             abi: ABI_VERSION,
             names: Names { units, anim_states: state_names, ..Names::default() },
-            visuals: Vec::new(),
-            effects: Vec::new(),
             animations,
-            named_effects: Vec::new(),
+            ..ClientRegistration::default()
         },
         units: unit_idx,
         states: state_idx,
