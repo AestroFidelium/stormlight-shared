@@ -7,6 +7,7 @@
 mod client;
 mod client_aiming;
 mod client_id_bridge;
+mod client_ui_bridge;
 mod invoke;
 mod loader;
 mod register;

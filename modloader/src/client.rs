@@ -25,10 +25,13 @@ use stormlight_mod_abi::interner::Interner;
 use stormlight_mod_abi::manifest::{ABI_VERSION, ModKind};
 use stormlight_mod_abi::navmesh::NavMeshDescriptor;
 use stormlight_mod_abi::notify::{NotifyAction, NotifyPoint};
+use stormlight_mod_abi::remap::RemapIds;
+use stormlight_mod_abi::ui::UiRoot;
 use stormlight_mod_abi::visuals::{ClientRegistration, EffectRole, VisualModel};
 
 use crate::host::Host;
 use crate::loader::{self, LoadedMod};
+use crate::ui_map::{BindingIds, LocalToGlobal};
 use crate::vfs::{ModSource, Vfs};
 
 /// One cosmetic mod's visuals after adoption, keyed by unit **name** — the stable
@@ -41,6 +44,12 @@ pub struct AdoptedVisuals {
     by_effect: BTreeMap<(String, EffectRole), VisualModel>,
     by_animation: BTreeMap<String, AnimationDescriptor>,
     by_notify_key: BTreeMap<String, VisualModel>,
+    /// The widget trees this mod declared (server#67), in **declaration order** —
+    /// the only table here that is a list rather than a map. Nothing outside a
+    /// tree names one, and the client draws every root it is given, so there is no
+    /// key to collide over; the order is the author's own back-to-front ordering
+    /// of the interface, and sorting them would reorder the HUD.
+    ui: Vec<UiRoot>,
 }
 
 /// A cosmetic effect key, qualified with the package that declared it
@@ -92,7 +101,8 @@ impl AdoptedVisuals {
     /// animation naming a custom state with no `names.anim_states` entry; and an
     /// animation that fails
     /// [`validate`](stormlight_mod_abi::animation::AnimationDescriptor::validate);
-    /// and a notify announcing a mod-defined event with no `names.events` entry.
+    /// a notify announcing a mod-defined event with no `names.events` entry; and a
+    /// widget tree that fails [`UiRoot::validate`].
     /// When two entries name the same key the later one wins (deterministic,
     /// insertion order).
     ///
@@ -168,7 +178,13 @@ impl AdoptedVisuals {
         }
         let by_notify_key =
             reg.named_effects.iter().map(|e| (qualify(mod_id, &e.name), e.model.clone())).collect();
-        Ok(Self { by_name, by_effect, by_animation, by_notify_key })
+        // Structural validation of the interface, for the same reason animations
+        // are validated here: past this point the tree reaches a renderer that
+        // would draw a blank rectangle and explain nothing.
+        for root in &reg.ui {
+            root.validate().map_err(|e| anyhow!("ui root `{}`: {e}", root.name))?;
+        }
+        Ok(Self { by_name, by_effect, by_animation, by_notify_key, ui: reg.ui.clone() })
     }
 
     /// The visual declared for the unit named `unit_name`, if any.
@@ -213,13 +229,21 @@ impl AdoptedVisuals {
     }
 
     /// Whether this mod declares nothing at all — no unit visual, no effect
-    /// visual, no animation, no notify effect.
+    /// visual, no animation, no notify effect, no interface.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.by_name.is_empty()
             && self.by_effect.is_empty()
             && self.by_animation.is_empty()
             && self.by_notify_key.is_empty()
+            && self.ui.is_empty()
+    }
+
+    /// The widget trees this mod declared, in declaration order — still in the
+    /// mod's own id space, which [`ClientHost`] translates as it merges them.
+    #[must_use]
+    pub fn ui(&self) -> &[UiRoot] {
+        &self.ui
     }
 
     /// Iterate the `(unit name, visual)` pairs, in unit-name order.
@@ -264,6 +288,20 @@ pub struct ClientHost {
     /// (server#79). Only the geometry is kept — the descriptor's own id is local
     /// to its mod and nothing client-side names a mesh by id.
     navmeshes: Vec<NavMeshDescriptor>,
+    /// The id space a HUD's [`ValueBinding`](stormlight_mod_abi::ui::ValueBinding)s
+    /// are translated into (server#67) — stats, resource pools and stack counters,
+    /// the three families the unit/ability bridge above does not reach. Separate
+    /// because it needs the engine's reserved stat names seeded first; see
+    /// [`BindingIds`].
+    binding_ids: BindingIds,
+    /// Every widget tree the loaded cosmetic mods declared, in load order, already
+    /// translated into that global id space.
+    ui: Vec<UiRoot>,
+    /// Whether a cosmetic mod has been adopted yet. The binding bridge interns as
+    /// it goes, so a gameplay mod arriving *after* a cosmetic one would intern its
+    /// names above whatever that cosmetic already claimed, landing every one of
+    /// them on an id the server never assigned. Refused rather than shifted.
+    cosmetics_loaded: bool,
 }
 
 impl ClientHost {
@@ -280,6 +318,9 @@ impl ClientHost {
             ability_ids: Interner::new(),
             aiming: BTreeMap::new(),
             navmeshes: Vec::new(),
+            binding_ids: BindingIds::new(),
+            ui: Vec::new(),
+            cosmetics_loaded: false,
         })
     }
 
@@ -306,6 +347,14 @@ impl ClientHost {
         if loaded.manifest.kind != ModKind::Server {
             bail!("mod `{}` is not a gameplay (server) mod", loaded.manifest.id);
         }
+        if self.cosmetics_loaded {
+            bail!(
+                "gameplay mod `{}` was loaded after a cosmetic one; \
+                 every gameplay mod must be loaded first, in the server's own \
+                 order, or the ids a HUD binds to shift out from under it",
+                loaded.manifest.id
+            );
+        }
         let reg = self.host.register(&loaded.wasm)?;
         for name in &reg.names.units {
             self.unit_ids.intern(name);
@@ -313,6 +362,9 @@ impl ClientHost {
         for name in &reg.names.abilities {
             self.ability_ids.intern(name);
         }
+        // The families a HUD binding names, interned in the same order adoption
+        // interns them so the client's ids match the server's (server#67).
+        self.binding_ids.adopt(&reg.names);
         // Aim modes, re-keyed local → global through the names just interned. A
         // descriptor pointing at a missing name entry is a broken registration:
         // report it rather than dropping the mode, which would leave the client
@@ -403,8 +455,27 @@ impl ClientHost {
         for (key, model) in adopted.named_effects() {
             self.notify_effects.insert(key.clone(), model.clone());
         }
+        // Interfaces are appended, never merged: two mods each declaring a HUD
+        // both get one, and a later mod cannot silently replace an earlier one's
+        // (there is no key to collide on — see `AdoptedVisuals::ui`).
+        let mut roots = adopted.ui().to_vec();
+        {
+            let map = LocalToGlobal::new(&reg.names, &mut self.binding_ids);
+            roots.remap_ids(&map).map_err(|e| anyhow!("mod `{}`: {e}", loaded.manifest.id))?;
+        }
+        self.ui.extend(roots);
+        self.cosmetics_loaded = true;
         self.vfs.insert(loaded.manifest.id, source);
         Ok(())
+    }
+
+    /// Every widget tree the loaded cosmetic mods declared, in load order, with
+    /// every bound handle already translated into the global id space — what the
+    /// client walks to build its interface (server#67). Empty when no cosmetic mod
+    /// declares one, which is the content-free client showing no HUD at all.
+    #[must_use]
+    pub fn ui(&self) -> &[UiRoot] {
+        &self.ui
     }
 
     /// The visual a loaded cosmetic mod declared for the unit named `unit_name`,
