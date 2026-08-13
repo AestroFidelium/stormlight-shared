@@ -43,9 +43,7 @@ fn build(s: &Scenario) -> (ClientRegistration, Vec<usize>) {
         abi: ABI_VERSION,
         names: Names { units, ..Names::default() },
         visuals,
-        effects: Vec::new(),
-        animations: Vec::new(),
-        named_effects: Vec::new(),
+        ..ClientRegistration::default()
     };
     (reg, idx)
 }

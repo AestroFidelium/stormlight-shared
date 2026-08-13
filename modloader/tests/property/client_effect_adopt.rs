@@ -53,10 +53,8 @@ fn build(s: &Scenario) -> (ClientRegistration, Vec<(usize, EffectRole)>) {
     let reg = ClientRegistration {
         abi: ABI_VERSION,
         names: Names { abilities, ..Names::default() },
-        visuals: Vec::new(),
         effects,
-        animations: Vec::new(),
-        named_effects: Vec::new(),
+        ..ClientRegistration::default()
     };
     (reg, keys)
 }

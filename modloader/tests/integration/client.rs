@@ -36,9 +36,7 @@ fn sample() -> ClientRegistration {
                 yaw_offset: 0.0,
             },
         }],
-        effects: Vec::new(),
-        animations: Vec::new(),
-        named_effects: Vec::new(),
+        ..ClientRegistration::default()
     }
 }
 
