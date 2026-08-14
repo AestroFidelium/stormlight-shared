@@ -20,7 +20,7 @@ use std::path::Path;
 use anyhow::{Result, anyhow, bail};
 use stormlight_mod_abi::abilities::Targeting;
 use stormlight_mod_abi::animation::{AnimState, AnimationDescriptor};
-use stormlight_mod_abi::ids::{AbilityId, Handle, UnitId};
+use stormlight_mod_abi::ids::{AbilityId, Handle, TalentId, UnitId};
 use stormlight_mod_abi::interner::Interner;
 use stormlight_mod_abi::manifest::{ABI_VERSION, ModKind};
 use stormlight_mod_abi::navmesh::NavMeshDescriptor;
@@ -276,6 +276,13 @@ pub struct ClientHost {
     /// reproduces the server's ids exactly.
     unit_ids: Interner<UnitId>,
     ability_ids: Interner<AbilityId>,
+    /// The same bridge for talents (server#68). A chosen talent reaches the client
+    /// as a bare global id, and a HUD list bound to it has nothing to print until
+    /// that id can be turned back into the name its mod declared. Kept beside the
+    /// other two rather than in [`BindingIds`] because it is the *gameplay* side's
+    /// id space, reconstructed from gameplay `Names` — no cosmetic mod ever names
+    /// a talent.
+    talent_ids: Interner<TalentId>,
     /// How each gameplay ability is aimed, keyed by the **global `AbilityId`**
     /// (server#59). The client cannot decide an aim mode locally — it is mod data
     /// like everything else — so the same gameplay pass that rebuilds the id map
@@ -316,6 +323,7 @@ impl ClientHost {
             notify_effects: BTreeMap::new(),
             unit_ids: Interner::new(),
             ability_ids: Interner::new(),
+            talent_ids: Interner::new(),
             aiming: BTreeMap::new(),
             navmeshes: Vec::new(),
             binding_ids: BindingIds::new(),
@@ -362,6 +370,10 @@ impl ClientHost {
         for name in &reg.names.abilities {
             self.ability_ids.intern(name);
         }
+        // Talents, for the one binding that yields a list of them (server#68).
+        for name in &reg.names.talents {
+            self.talent_ids.intern(name);
+        }
         // The families a HUD binding names, interned in the same order adoption
         // interns them so the client's ids match the server's (server#67).
         self.binding_ids.adopt(&reg.names);
@@ -381,6 +393,26 @@ impl ClientHost {
         }
         self.navmeshes.extend(reg.navmeshes.iter().cloned());
         Ok(())
+    }
+
+    /// The name the declaring gameplay mod gave the talent with this **global**
+    /// id, or `None` for an id no loaded mod declared (server#68).
+    ///
+    /// `None` rather than a raw-index lookup on purpose: the ids arrive from the
+    /// server, and a client whose mod list is a talent short would otherwise print
+    /// a *neighbouring* talent's name — a label that is wrong rather than missing.
+    #[must_use]
+    pub fn talent_name(&self, id: TalentId) -> Option<&str> {
+        self.talent_ids.resolve(id)
+    }
+
+    /// Every declared talent as `(global id, name)`, in interning order — how the
+    /// client fills the table a chosen-talents list is printed through.
+    pub fn talent_names(&self) -> impl Iterator<Item = (TalentId, &str)> {
+        (0..self.talent_ids.len() as u32).filter_map(|raw| {
+            let id = TalentId::from_raw(raw);
+            self.talent_ids.resolve(id).map(|name| (id, name))
+        })
     }
 
     /// Every gameplay ability's declared aim mode, keyed by the **global
