@@ -105,6 +105,12 @@ impl Plugin for ProtocolPlugin {
         // has been taken, and what is still waiting on them.
         crate::talents::register(app);
 
+        // Interface triggers (stormlight/server#69): a declared widget raising a
+        // mod-defined event into that mod's own gameplay guest. The interface's
+        // other two actions need no message of their own — a clicked ability slot
+        // sends the very `CastIntent` its keybind does.
+        crate::ui::register(app);
+
         // Player move orders (stormlight/server#47): a client asks its controlled
         // unit to walk to a ground point; the server moves it authoritatively and
         // replicates the Transform like any mover.

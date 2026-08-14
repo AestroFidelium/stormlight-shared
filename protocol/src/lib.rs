@@ -20,6 +20,7 @@ pub mod quantize;
 pub mod slots;
 pub mod stress;
 pub mod talents;
+pub mod ui;
 pub mod vitals;
 
 // `#[macro_export]` puts the macros at the crate root; the module still has to
