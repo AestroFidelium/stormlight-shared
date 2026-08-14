@@ -20,12 +20,14 @@ use std::path::Path;
 use anyhow::{Result, anyhow, bail};
 use stormlight_mod_abi::abilities::Targeting;
 use stormlight_mod_abi::animation::{AnimState, AnimationDescriptor};
+use stormlight_mod_abi::descriptors::Names;
 use stormlight_mod_abi::ids::{AbilityId, Handle, TalentId, UnitId};
 use stormlight_mod_abi::interner::Interner;
 use stormlight_mod_abi::manifest::{ABI_VERSION, ModKind};
 use stormlight_mod_abi::navmesh::NavMeshDescriptor;
 use stormlight_mod_abi::notify::{NotifyAction, NotifyPoint};
 use stormlight_mod_abi::remap::RemapIds;
+use stormlight_mod_abi::talent_tree::TalentTree;
 use stormlight_mod_abi::ui::UiRoot;
 use stormlight_mod_abi::visuals::{ClientRegistration, EffectRole, VisualModel};
 
@@ -289,6 +291,19 @@ pub struct ClientHost {
     /// records the declared [`Targeting`] alongside it, and the client resolves a
     /// keypress into an `Aim` of exactly that shape.
     aiming: BTreeMap<AbilityId, Targeting>,
+    /// Each unit's declared talent tree, keyed by the **global `UnitId`** the wire
+    /// carries and with its options already re-keyed to global `TalentId`s
+    /// (server#69).
+    ///
+    /// The client needs this to interpret a
+    /// [`UiAction::PickTalent`](stormlight_mod_abi::ui::UiAction::PickTalent),
+    /// which names a tier and an *option index*: what a tier offers is content —
+    /// identical for every player driving that unit, and known before the match —
+    /// so the wire deliberately does not carry it
+    /// ([`ReplicatedTalents`](stormlight_shared::talents) is a view of *choices*).
+    /// Rebuilt here from the same gameplay pass that rebuilds the id maps, which
+    /// is the only place the client ever learns content.
+    talent_trees: BTreeMap<UnitId, TalentTree>,
     /// Map geometry declared by the loaded gameplay mods, in load order. The
     /// client bakes this into the same walkable region the server routes over, so
     /// it can draw the map and agree with the server about where a unit may stand
@@ -325,6 +340,7 @@ impl ClientHost {
             ability_ids: Interner::new(),
             talent_ids: Interner::new(),
             aiming: BTreeMap::new(),
+            talent_trees: BTreeMap::new(),
             navmeshes: Vec::new(),
             binding_ids: BindingIds::new(),
             ui: Vec::new(),
@@ -391,8 +407,61 @@ impl ClientHost {
                 .ok_or_else(|| anyhow!("ability `{name}` was not interned"))?;
             self.aiming.insert(global, ability.targeting.clone());
         }
+        // Each unit's talent tree, re-keyed local→global on both ends: the unit it
+        // hangs on and every talent its tiers offer (server#69). Both mods author
+        // from raw 0, so a tree adopted verbatim would have the second mod's tier
+        // offering the first mod's talents.
+        for (raw, unit) in reg.units.iter().enumerate() {
+            let Some(tree) = &unit.talent_tree else { continue };
+            let name = reg
+                .names
+                .units
+                .get(raw)
+                .ok_or_else(|| anyhow!("unit descriptor {raw} has no name-table entry"))?;
+            let global =
+                self.unit_ids.get(name).ok_or_else(|| anyhow!("unit `{name}` was not interned"))?;
+            self.talent_trees.insert(global, self.globalize_tree(tree, &reg.names)?);
+        }
         self.navmeshes.extend(reg.navmeshes.iter().cloned());
         Ok(())
+    }
+
+    /// One tree with every option translated into the global talent id space.
+    ///
+    /// A tier offering a handle its own mod never named is a broken registration:
+    /// reported rather than dropped, because a silently shortened tier is a talent
+    /// panel with a hole in it that no author can see the cause of.
+    fn globalize_tree(&self, tree: &TalentTree, names: &Names) -> Result<TalentTree> {
+        let mut out = tree.clone();
+        for tier in &mut out.tiers {
+            for option in &mut tier.options {
+                let name = names.talents.get(option.0 as usize).ok_or_else(|| {
+                    anyhow!("talent tier offers handle {} with no name-table entry", option.0)
+                })?;
+                *option = self
+                    .talent_ids
+                    .get(name)
+                    .ok_or_else(|| anyhow!("talent `{name}` was not interned"))?;
+            }
+        }
+        Ok(out)
+    }
+
+    /// The talent tree declared for the unit with this **global** id, or `None`
+    /// for a unit that declares none (a creep, a projectile) and for an id no
+    /// loaded gameplay mod defines.
+    ///
+    /// `None` rather than an empty tree: a HUD that drew a talent panel for a unit
+    /// with nothing to choose would be an empty panel the player cannot dismiss.
+    #[must_use]
+    pub fn talent_tree(&self, unit: UnitId) -> Option<&TalentTree> {
+        self.talent_trees.get(&unit)
+    }
+
+    /// Every declared tree as `(global unit id, tree)` — how the client fills the
+    /// table a `PickTalent` option index is resolved through.
+    pub fn talent_trees(&self) -> impl Iterator<Item = (UnitId, &TalentTree)> {
+        self.talent_trees.iter().map(|(id, tree)| (*id, tree))
     }
 
     /// The name the declaring gameplay mod gave the talent with this **global**

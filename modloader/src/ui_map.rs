@@ -32,19 +32,28 @@ use stormlight_mod_abi::interner::Interner;
 use stormlight_mod_abi::remap::IdMap;
 use stormlight_mod_abi::stats;
 
-/// The global id space the client rebuilds for the families a widget binding can
-/// name. Seeded with the reserved stat names, then grown by each gameplay mod's
-/// `Names` in load order.
+/// The global id space the client rebuilds for the families a widget can name.
+/// Seeded with the reserved stat names, then grown by each gameplay mod's `Names`
+/// in load order.
 pub struct BindingIds {
     stats: Interner<StatId>,
     resources: Interner<ResourceId>,
     stacks: Interner<StackId>,
+    /// The family a widget's *action* names rather than its binding
+    /// (stormlight/server#69): a `UiAction::Trigger` raises a mod-defined event,
+    /// and which global id that is was decided by the gameplay side. Reserves
+    /// nothing and so starts empty, like resources and stacks.
+    events: Interner<EventId>,
 }
 
 impl Default for BindingIds {
     fn default() -> Self {
-        let mut ids =
-            Self { stats: Interner::new(), resources: Interner::new(), stacks: Interner::new() };
+        let mut ids = Self {
+            stats: Interner::new(),
+            resources: Interner::new(),
+            stacks: Interner::new(),
+            events: Interner::new(),
+        };
         for name in stats::RESERVED {
             ids.stats.intern(name);
         }
@@ -70,6 +79,9 @@ impl BindingIds {
         }
         for name in &names.stacks {
             self.stacks.intern(name);
+        }
+        for name in &names.events {
+            self.events.intern(name);
         }
     }
 }
@@ -100,10 +112,13 @@ impl std::error::Error for Dangling {}
 /// One cosmetic bundle's local→global map: resolve the local handle to the name
 /// that bundle gave it, then intern that name into the shared id space.
 ///
-/// Only the three families a [`ValueBinding`](stormlight_mod_abi::ui::ValueBinding)
-/// reaches translate; every other method is the identity, because no other handle
-/// is reachable from a widget tree (a `Slot` is mod convention, not an interned id)
-/// and inventing a translation for one would be inventing a mapping nothing feeds.
+/// Four families translate: the three a
+/// [`ValueBinding`](stormlight_mod_abi::ui::ValueBinding) reaches, plus the events
+/// a [`UiAction::Trigger`](stormlight_mod_abi::ui::UiAction::Trigger) raises
+/// (server#69). Every other method is the identity, because no other handle is
+/// reachable from a widget tree — a `Slot` is mod convention and a talent option
+/// is an index into the unit's own tree, neither of them interned — and inventing
+/// a translation for one would be inventing a mapping nothing feeds.
 pub struct LocalToGlobal<'a> {
     names: &'a Names,
     ids: RefCell<&'a mut BindingIds>,
@@ -154,7 +169,12 @@ impl IdMap for LocalToGlobal<'_> {
         Ok(id)
     }
     fn event(&self, id: EventId) -> Result<EventId, Dangling> {
-        Ok(id)
+        let name = self
+            .names
+            .events
+            .get(id.0 as usize)
+            .ok_or(Dangling { family: "event", raw: u32::from(id.0) })?;
+        Ok(self.ids.borrow_mut().events.intern(name))
     }
     fn buff(&self, id: BuffId) -> Result<BuffId, Dangling> {
         Ok(id)

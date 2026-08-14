@@ -18,4 +18,5 @@ mod quantize;
 mod slots;
 mod talent_pick;
 mod turn_rate;
+mod ui_trigger;
 mod vitals;
