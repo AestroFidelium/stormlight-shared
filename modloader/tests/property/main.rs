@@ -7,5 +7,6 @@
 mod client_adopt;
 mod client_animation_adopt;
 mod client_effect_adopt;
+mod client_icon_adopt;
 mod client_notify_adopt;
 mod client_ui_adopt;
