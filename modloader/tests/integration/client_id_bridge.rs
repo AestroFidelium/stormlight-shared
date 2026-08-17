@@ -11,6 +11,10 @@
 //!   an accidental 0);
 //! - a visual whose unit no loaded gameplay mod defines has no id and is dropped
 //!   (the client falls back to its placeholder), never a panic.
+//!
+//! An ability's interface icon (server#94) crosses the same bridge as its feedback
+//! visual, and for a sharper reason: the interface asks for it *by slot*, and a
+//! slot carries the ability's global id alone.
 
 use std::io::{Cursor, Write};
 
@@ -18,8 +22,8 @@ use stormlight_mod_abi::descriptors::{Names, Registration};
 use stormlight_mod_abi::ids::{AbilityId, UnitId};
 use stormlight_mod_abi::manifest::ABI_VERSION;
 use stormlight_mod_abi::visuals::{
-    ClientRegistration, EffectRole, EffectVisualDescriptor, PrimitiveShape, VisualDescriptor,
-    VisualModel,
+    AbilityIcon, ClientRegistration, EffectRole, EffectVisualDescriptor, PrimitiveShape,
+    VisualDescriptor, VisualModel,
 };
 use stormlight_modloader::client::ClientHost;
 use zip::write::SimpleFileOptions;
@@ -81,8 +85,12 @@ fn gameplay(units: &[&str], abilities: &[&str]) -> Vec<u8> {
     package("gameplay", "server", &postcard::to_allocvec(&reg).unwrap())
 }
 
+/// The icon the cosmetic fixture declares for its ability.
+const ICON: &str = "mod://cosmetic/bolt.png";
+
 /// A cosmetic package dressing unit `unit_name` (local handle 0) and ability
-/// `ability_name` (local handle 0, Projectile role) with distinct models.
+/// `ability_name` (local handle 0, Projectile role) with distinct models, and
+/// giving that ability an interface icon.
 fn cosmetic(unit_name: &str, ability_name: &str) -> Vec<u8> {
     let reg = ClientRegistration {
         abi: ABI_VERSION,
@@ -97,6 +105,7 @@ fn cosmetic(unit_name: &str, ability_name: &str) -> Vec<u8> {
             role: EffectRole::Projectile,
             model: model(0.9),
         }],
+        icons: vec![AbilityIcon { ability: AbilityId(0), image: ICON.into() }],
         ..ClientRegistration::default()
     };
     package("cosmetic", "client", &postcard::to_allocvec(&reg).unwrap())
@@ -126,6 +135,14 @@ fn a_cosmetic_visual_rekeys_to_the_gameplay_units_interning_position() {
         vec![((AbilityId(1), EffectRole::Projectile), model(0.9))],
         "the effect visual must re-key to the gameplay ability's interned global id",
     );
+
+    let icons: Vec<(AbilityId, String)> =
+        host.icons_by_id().map(|(id, path)| (id, path.to_string())).collect();
+    assert_eq!(
+        icons,
+        vec![(AbilityId(1), ICON.to_string())],
+        "the icon must re-key to the gameplay ability's interned global id",
+    );
 }
 
 #[test]
@@ -138,4 +155,5 @@ fn a_visual_for_an_unknown_unit_is_dropped_not_mapped() {
 
     assert_eq!(host.visuals_by_id().count(), 0, "an un-mapped unit visual must be dropped");
     assert_eq!(host.effects_by_id().count(), 0, "an un-mapped effect visual must be dropped");
+    assert_eq!(host.icons_by_id().count(), 0, "an un-mapped icon must be dropped");
 }

@@ -44,6 +44,10 @@ use crate::vfs::{ModSource, Vfs};
 pub struct AdoptedVisuals {
     by_name: BTreeMap<String, VisualModel>,
     by_effect: BTreeMap<(String, EffectRole), VisualModel>,
+    /// The icon each ability wears in an interface (server#94), keyed by the same
+    /// ability **name** its feedback visuals are keyed by. A picture rather than a
+    /// [`VisualModel`]: an icon is a flat asset in a widget.
+    by_icon: BTreeMap<String, String>,
     by_animation: BTreeMap<String, AnimationDescriptor>,
     by_notify_key: BTreeMap<String, VisualModel>,
     /// The widget trees this mod declared (server#67), in **declaration order** —
@@ -94,12 +98,14 @@ fn states_of(anim: &AnimationDescriptor) -> impl Iterator<Item = AnimState> + '_
 impl AdoptedVisuals {
     /// Build the cosmetic tables from a decoded [`ClientRegistration`]: unit
     /// visuals and animations keyed by unit name, ability feedback keyed by
-    /// `(ability name, role)`.
+    /// `(ability name, role)`, and each ability's interface icon keyed by ability
+    /// name.
     ///
     /// Total over hostile input — each of these is an `Err`, never a panic: a
     /// major ABI mismatch; a visual or animation referencing a unit handle with no
     /// [`names.units`](stormlight_mod_abi::descriptors::Names) entry; an effect
-    /// visual referencing an ability handle with no `names.abilities` entry; an
+    /// visual or an icon referencing an ability handle with no `names.abilities`
+    /// entry; an
     /// animation naming a custom state with no `names.anim_states` entry; and an
     /// animation that fails
     /// [`validate`](stormlight_mod_abi::animation::AnimationDescriptor::validate);
@@ -135,6 +141,16 @@ impl AdoptedVisuals {
                 )
             })?;
             by_effect.insert((name.clone(), e.role), e.model.clone());
+        }
+        let mut by_icon = BTreeMap::new();
+        for icon in &reg.icons {
+            let name = reg.names.abilities.get(icon.ability.0 as usize).ok_or_else(|| {
+                anyhow!(
+                    "icon references ability handle {} with no name-table entry",
+                    icon.ability.0
+                )
+            })?;
+            by_icon.insert(name.clone(), icon.image.clone());
         }
         let mut by_animation = BTreeMap::new();
         for a in &reg.animations {
@@ -186,7 +202,7 @@ impl AdoptedVisuals {
         for root in &reg.ui {
             root.validate().map_err(|e| anyhow!("ui root `{}`: {e}", root.name))?;
         }
-        Ok(Self { by_name, by_effect, by_animation, by_notify_key, ui: reg.ui.clone() })
+        Ok(Self { by_name, by_effect, by_icon, by_animation, by_notify_key, ui: reg.ui.clone() })
     }
 
     /// The visual declared for the unit named `unit_name`, if any.
@@ -199,6 +215,18 @@ impl AdoptedVisuals {
     #[must_use]
     pub fn effect(&self, ability_name: &str, role: EffectRole) -> Option<&VisualModel> {
         self.by_effect.get(&(ability_name.to_string(), role))
+    }
+
+    /// The icon declared for `ability_name`, if any — the picture an interface
+    /// draws in whichever slot binds that ability (server#94).
+    #[must_use]
+    pub fn icon(&self, ability_name: &str) -> Option<&str> {
+        self.by_icon.get(ability_name).map(String::as_str)
+    }
+
+    /// Iterate the `(ability name, icon path)` pairs, in name order.
+    pub fn icons(&self) -> impl Iterator<Item = (&String, &String)> {
+        self.by_icon.iter()
     }
 
     /// The animation declared for the unit named `unit_name`, if any.
@@ -236,6 +264,7 @@ impl AdoptedVisuals {
     pub fn is_empty(&self) -> bool {
         self.by_name.is_empty()
             && self.by_effect.is_empty()
+            && self.by_icon.is_empty()
             && self.by_animation.is_empty()
             && self.by_notify_key.is_empty()
             && self.ui.is_empty()
@@ -267,6 +296,10 @@ pub struct ClientHost {
     vfs: Vfs,
     visuals: BTreeMap<String, VisualModel>,
     effects: BTreeMap<(String, EffectRole), VisualModel>,
+    /// Each ability's interface icon, keyed by ability name until
+    /// [`icons_by_id`](ClientHost::icons_by_id) crosses the same name→global-id
+    /// bridge the visuals cross (server#94).
+    icons: BTreeMap<String, String>,
     animations: BTreeMap<String, AnimationDescriptor>,
     /// Cosmetic effects an animation notify spawns (server#76), keyed by the
     /// package-qualified name their declaring mod gave them.
@@ -334,6 +367,7 @@ impl ClientHost {
             vfs: Vfs::new(),
             visuals: BTreeMap::new(),
             effects: BTreeMap::new(),
+            icons: BTreeMap::new(),
             animations: BTreeMap::new(),
             notify_effects: BTreeMap::new(),
             unit_ids: Interner::new(),
@@ -515,6 +549,17 @@ impl ClientHost {
             .filter_map(|((name, role), model)| Some(((self.ability_ids.get(name)?, *role), model)))
     }
 
+    /// Every adopted ability icon keyed by the **global `AbilityId`** the wire
+    /// carries, the picture an interface draws for whichever slot binds that
+    /// ability (server#94). An icon for an ability no loaded gameplay mod defines
+    /// is skipped, exactly like [`effects_by_id`](Self::effects_by_id) — the slot
+    /// then wears whatever its HUD declared for an empty socket.
+    pub fn icons_by_id(&self) -> impl Iterator<Item = (AbilityId, &str)> {
+        self.icons
+            .iter()
+            .filter_map(|(name, image)| Some((self.ability_ids.get(name)?, image.as_str())))
+    }
+
     /// Load a cosmetic mod from `path` — a folder or a `.zip` package.
     pub fn load(&mut self, path: &Path) -> Result<()> {
         if path.is_dir() {
@@ -547,6 +592,9 @@ impl ClientHost {
         }
         for (key, model) in adopted.effects() {
             self.effects.insert(key.clone(), model.clone());
+        }
+        for (ability, image) in adopted.icons() {
+            self.icons.insert(ability.clone(), image.clone());
         }
         for (name, animation) in adopted.animations() {
             self.animations.insert(name.clone(), animation.clone());
