@@ -26,7 +26,7 @@ use stormlight_mod_abi::impacts::PoolRef;
 use stormlight_mod_abi::manifest::ABI_VERSION;
 use stormlight_mod_abi::stats;
 use stormlight_mod_abi::ui::{
-    Layout, RootVisibility, Style, UiRoot, UiSubject, ValueBinding, Widget, WidgetKind,
+    Layout, RootVisibility, Style, SummonGate, UiRoot, UiSubject, ValueBinding, Widget, WidgetKind,
 };
 use stormlight_mod_abi::visuals::ClientRegistration;
 use stormlight_modloader::client::ClientHost;
@@ -117,6 +117,7 @@ fn cosmetic(stats: &[&str], resources: &[&str], stacks: &[&str]) -> Vec<u8> {
         ui: vec![UiRoot {
             name: "hud".into(),
             when: RootVisibility::Always,
+            summon: SummonGate::Ignored,
             subject: UiSubject::LocalPlayer,
             root: a_widget(WidgetKind::Panel { children }),
         }],
@@ -203,6 +204,7 @@ fn a_handle_the_bundles_own_names_do_not_explain_is_refused() {
         ui: vec![UiRoot {
             name: "hud".into(),
             when: RootVisibility::Always,
+            summon: SummonGate::Ignored,
             subject: UiSubject::LocalPlayer,
             root: a_widget(WidgetKind::Bar { value: ValueBinding::Stat(StatId(7)) }),
         }],
