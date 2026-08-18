@@ -23,4 +23,5 @@ pub use crate::protocol::ProtocolPlugin;
 pub use crate::slots::{ReplicatedSlots, SlotState};
 pub use crate::talents::{ReplicatedTalents, TalentPick, TalentPickChannel, TierView};
 pub use crate::ui::{UiTrigger, UiTriggerChannel};
+pub use crate::vital_feed::{FEED_WINDOW, VitalChange, VitalChangeKind, VitalFeedChannel};
 pub use crate::vitals::ReplicatedVitals;

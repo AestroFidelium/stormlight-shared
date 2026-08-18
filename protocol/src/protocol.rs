@@ -80,6 +80,12 @@ impl Plugin for ProtocolPlugin {
         // hit; each client plays a transient impact visual there.
         crate::impact::register(app);
 
+        // What a blow actually cost (stormlight/server#93): the coalesced
+        // server→client report a mod's HUD prints as floating combat text. The
+        // impact above says a shot landed; this says how much it took, from
+        // whatever dealt it — including everything that fires no projectile at all.
+        crate::vital_feed::register(app);
+
         // Combat vitals + resource pools (stormlight/server#57): the health/shield
         // and wallet state a client draws bars from. Quantized ceiling-and-fraction
         // frames, interpolated so the bars slide rather than step at the
