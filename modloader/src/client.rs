@@ -29,7 +29,7 @@ use stormlight_mod_abi::notify::{NotifyAction, NotifyPoint};
 use stormlight_mod_abi::remap::RemapIds;
 use stormlight_mod_abi::talent_tree::TalentTree;
 use stormlight_mod_abi::ui::UiRoot;
-use stormlight_mod_abi::visuals::{ClientRegistration, EffectRole, VisualModel};
+use stormlight_mod_abi::visuals::{ClientRegistration, EffectRole, TalentInfo, VisualModel};
 
 use crate::host::Host;
 use crate::loader::{self, LoadedMod};
@@ -48,6 +48,11 @@ pub struct AdoptedVisuals {
     /// ability **name** its feedback visuals are keyed by. A picture rather than a
     /// [`VisualModel`]: an icon is a flat asset in a widget.
     by_icon: BTreeMap<String, String>,
+    /// What each talent is called, does and looks like (server#95), keyed by the
+    /// talent **name** — the same bridge the icons cross, one family along. Words
+    /// rather than a picture: a panel addresses a cell by tier and option index, so
+    /// it has nothing of its own to print there.
+    by_card: BTreeMap<String, TalentInfo>,
     by_animation: BTreeMap<String, AnimationDescriptor>,
     by_notify_key: BTreeMap<String, VisualModel>,
     /// The widget trees this mod declared (server#67), in **declaration order** —
@@ -152,6 +157,13 @@ impl AdoptedVisuals {
             })?;
             by_icon.insert(name.clone(), icon.image.clone());
         }
+        let mut by_card = BTreeMap::new();
+        for card in &reg.cards {
+            let name = reg.names.talents.get(card.talent.0 as usize).ok_or_else(|| {
+                anyhow!("card references talent handle {} with no name-table entry", card.talent.0)
+            })?;
+            by_card.insert(name.clone(), card.info.clone());
+        }
         let mut by_animation = BTreeMap::new();
         for a in &reg.animations {
             let name = reg.names.units.get(a.unit.0 as usize).ok_or_else(|| {
@@ -202,7 +214,15 @@ impl AdoptedVisuals {
         for root in &reg.ui {
             root.validate().map_err(|e| anyhow!("ui root `{}`: {e}", root.name))?;
         }
-        Ok(Self { by_name, by_effect, by_icon, by_animation, by_notify_key, ui: reg.ui.clone() })
+        Ok(Self {
+            by_name,
+            by_effect,
+            by_icon,
+            by_card,
+            by_animation,
+            by_notify_key,
+            ui: reg.ui.clone(),
+        })
     }
 
     /// The visual declared for the unit named `unit_name`, if any.
@@ -227,6 +247,18 @@ impl AdoptedVisuals {
     /// Iterate the `(ability name, icon path)` pairs, in name order.
     pub fn icons(&self) -> impl Iterator<Item = (&String, &String)> {
         self.by_icon.iter()
+    }
+
+    /// The card declared for `talent_name`, if any — what a talent panel prints and
+    /// draws for whichever cell offers that talent (server#95).
+    #[must_use]
+    pub fn card(&self, talent_name: &str) -> Option<&TalentInfo> {
+        self.by_card.get(talent_name)
+    }
+
+    /// Iterate the `(talent name, card)` pairs, in name order.
+    pub fn cards(&self) -> impl Iterator<Item = (&String, &TalentInfo)> {
+        self.by_card.iter()
     }
 
     /// The animation declared for the unit named `unit_name`, if any.
@@ -259,12 +291,14 @@ impl AdoptedVisuals {
     }
 
     /// Whether this mod declares nothing at all — no unit visual, no effect
-    /// visual, no animation, no notify effect, no interface.
+    /// visual, no icon, no talent card, no animation, no notify effect, no
+    /// interface.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.by_name.is_empty()
             && self.by_effect.is_empty()
             && self.by_icon.is_empty()
+            && self.by_card.is_empty()
             && self.by_animation.is_empty()
             && self.by_notify_key.is_empty()
             && self.ui.is_empty()
@@ -300,6 +334,10 @@ pub struct ClientHost {
     /// [`icons_by_id`](ClientHost::icons_by_id) crosses the same name→global-id
     /// bridge the visuals cross (server#94).
     icons: BTreeMap<String, String>,
+    /// Each talent's card, keyed by talent name until
+    /// [`cards_by_id`](ClientHost::cards_by_id) crosses the same name→global-id
+    /// bridge the icons cross (server#95).
+    cards: BTreeMap<String, TalentInfo>,
     animations: BTreeMap<String, AnimationDescriptor>,
     /// Cosmetic effects an animation notify spawns (server#76), keyed by the
     /// package-qualified name their declaring mod gave them.
@@ -368,6 +406,7 @@ impl ClientHost {
             visuals: BTreeMap::new(),
             effects: BTreeMap::new(),
             icons: BTreeMap::new(),
+            cards: BTreeMap::new(),
             animations: BTreeMap::new(),
             notify_effects: BTreeMap::new(),
             unit_ids: Interner::new(),
@@ -560,6 +599,15 @@ impl ClientHost {
             .filter_map(|(name, image)| Some((self.ability_ids.get(name)?, image.as_str())))
     }
 
+    /// Every adopted talent card keyed by the **global `TalentId`** the tier tables
+    /// carry, the words and picture a panel shows for whichever cell offers that
+    /// talent (server#95). A card for a talent no loaded gameplay mod declares is
+    /// skipped, exactly like [`icons_by_id`](Self::icons_by_id) — the cell then
+    /// prints the interned identifier and wears the interface's own empty socket.
+    pub fn cards_by_id(&self) -> impl Iterator<Item = (TalentId, &TalentInfo)> {
+        self.cards.iter().filter_map(|(name, card)| Some((self.talent_ids.get(name)?, card)))
+    }
+
     /// Load a cosmetic mod from `path` — a folder or a `.zip` package.
     pub fn load(&mut self, path: &Path) -> Result<()> {
         if path.is_dir() {
@@ -595,6 +643,9 @@ impl ClientHost {
         }
         for (ability, image) in adopted.icons() {
             self.icons.insert(ability.clone(), image.clone());
+        }
+        for (talent, card) in adopted.cards() {
+            self.cards.insert(talent.clone(), card.clone());
         }
         for (name, animation) in adopted.animations() {
             self.animations.insert(name.clone(), animation.clone());
