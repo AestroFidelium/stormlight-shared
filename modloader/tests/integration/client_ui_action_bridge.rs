@@ -100,6 +100,7 @@ fn a_unit(tiers: &[(u8, &[u32])]) -> UnitDescriptor {
                 .map(|(level, options)| TalentTier {
                     level: *level,
                     options: options.iter().map(|raw| TalentId(*raw)).collect(),
+                    recommended: None,
                 })
                 .collect(),
             repick: RepickPolicy::Locked,
