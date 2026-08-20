@@ -27,7 +27,7 @@ use stormlight_mod_abi::manifest::{ABI_VERSION, ModKind};
 use stormlight_mod_abi::navmesh::NavMeshDescriptor;
 use stormlight_mod_abi::notify::{NotifyAction, NotifyPoint};
 use stormlight_mod_abi::remap::RemapIds;
-use stormlight_mod_abi::talents::AbilityFocus;
+use stormlight_mod_abi::talents::{AbilityFocus, QuestSpec};
 use stormlight_mod_abi::talent_tree::TalentTree;
 use stormlight_mod_abi::ui::UiRoot;
 use stormlight_mod_abi::visuals::{ClientRegistration, EffectRole, TalentInfo, VisualModel};
@@ -386,6 +386,13 @@ pub struct ClientHost {
     /// lands on, which is the difference between a tier that reads as four related
     /// choices and one that reads as four unrelated sentences.
     talent_focus: BTreeMap<TalentId, AbilityFocus>,
+    /// Which talents set the player a **task** rather than handing over a step
+    /// (server#132), keyed by the **global `TalentId`**.
+    ///
+    /// The declaration only: what a HUD needs in order to say a row is a quest at
+    /// all. Counting it is the effect system's and the running count is not on the
+    /// wire, so this is a mark and a target and nothing else.
+    talent_quests: BTreeMap<TalentId, QuestSpec>,
     /// Map geometry declared by the loaded gameplay mods, in load order. The
     /// client bakes this into the same walkable region the server routes over, so
     /// it can draw the map and agree with the server about where a unit may stand
@@ -426,6 +433,7 @@ impl ClientHost {
             aiming: BTreeMap::new(),
             talent_trees: BTreeMap::new(),
             talent_focus: BTreeMap::new(),
+            talent_quests: BTreeMap::new(),
             navmeshes: Vec::new(),
             binding_ids: BindingIds::new(),
             ui: Vec::new(),
@@ -512,7 +520,9 @@ impl ClientHost {
         // button contributes nothing, so a HUD asking about one and getting nothing
         // back is being told the honest answer rather than being failed.
         for (raw, talent) in reg.talents.iter().enumerate() {
-            let Some(focus) = talent.changes() else { continue };
+            if talent.changes().is_none() && talent.quest.is_none() {
+                continue;
+            }
             let name = reg
                 .names
                 .talents
@@ -522,7 +532,16 @@ impl ClientHost {
                 .talent_ids
                 .get(name)
                 .ok_or_else(|| anyhow!("talent `{name}` was not interned"))?;
-            self.talent_focus.insert(global, self.globalize_focus(focus, &reg.names)?);
+            if let Some(focus) = talent.changes() {
+                self.talent_focus.insert(global, self.globalize_focus(focus, &reg.names)?);
+            }
+            // The task it sets, if it sets one (server#132). The counter is kept as
+            // the mod named it: nothing client-side reads a stack counter yet, and
+            // re-keying a handle into a family the client does not intern would be
+            // inventing an id rather than translating one.
+            if let Some(quest) = talent.quest {
+                self.talent_quests.insert(global, quest);
+            }
         }
         self.navmeshes.extend(reg.navmeshes.iter().cloned());
         Ok(())
@@ -609,6 +628,15 @@ impl ClientHost {
     /// because naming one of its buttons would be a label that is confidently wrong.
     pub fn talent_focus(&self) -> impl Iterator<Item = (TalentId, AbilityFocus)> {
         self.talent_focus.iter().map(|(id, focus)| (*id, *focus))
+    }
+
+    /// Which talents set the player a task, as `(global talent id, spec)` in id
+    /// order — how the client fills the table a quest mark is drawn from
+    /// (server#132).
+    ///
+    /// Only the talents that declare one, which is almost none of them.
+    pub fn talent_quests(&self) -> impl Iterator<Item = (TalentId, QuestSpec)> {
+        self.talent_quests.iter().map(|(id, quest)| (*id, *quest))
     }
 
     /// Every declared talent as `(global id, name)`, in interning order — how the
