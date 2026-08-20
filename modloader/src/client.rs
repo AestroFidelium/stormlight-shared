@@ -27,6 +27,7 @@ use stormlight_mod_abi::manifest::{ABI_VERSION, ModKind};
 use stormlight_mod_abi::navmesh::NavMeshDescriptor;
 use stormlight_mod_abi::notify::{NotifyAction, NotifyPoint};
 use stormlight_mod_abi::remap::RemapIds;
+use stormlight_mod_abi::talents::AbilityFocus;
 use stormlight_mod_abi::talent_tree::TalentTree;
 use stormlight_mod_abi::ui::UiRoot;
 use stormlight_mod_abi::visuals::{ClientRegistration, EffectRole, TalentInfo, VisualModel};
@@ -375,6 +376,16 @@ pub struct ClientHost {
     /// Rebuilt here from the same gameplay pass that rebuilds the id maps, which
     /// is the only place the client ever learns content.
     talent_trees: BTreeMap<UnitId, TalentTree>,
+    /// Which one of the caster's abilities each talent changes, keyed by the
+    /// **global `TalentId`** (server#129), with any ability it names already
+    /// re-keyed global.
+    ///
+    /// Derived from the gameplay descriptor rather than declared beside it — see
+    /// [`TalentDescriptor::changes`] — and only present for a talent where that
+    /// question has a single answer. A HUD reads it to say *which key* a talent
+    /// lands on, which is the difference between a tier that reads as four related
+    /// choices and one that reads as four unrelated sentences.
+    talent_focus: BTreeMap<TalentId, AbilityFocus>,
     /// Map geometry declared by the loaded gameplay mods, in load order. The
     /// client bakes this into the same walkable region the server routes over, so
     /// it can draw the map and agree with the server about where a unit may stand
@@ -414,6 +425,7 @@ impl ClientHost {
             talent_ids: Interner::new(),
             aiming: BTreeMap::new(),
             talent_trees: BTreeMap::new(),
+            talent_focus: BTreeMap::new(),
             navmeshes: Vec::new(),
             binding_ids: BindingIds::new(),
             ui: Vec::new(),
@@ -495,8 +507,48 @@ impl ClientHost {
                 self.unit_ids.get(name).ok_or_else(|| anyhow!("unit `{name}` was not interned"))?;
             self.talent_trees.insert(global, self.globalize_tree(tree, &reg.names)?);
         }
+        // Which of the caster's buttons each talent is about (server#129), keyed
+        // and named in the global id space. A talent whose answer is not a single
+        // button contributes nothing, so a HUD asking about one and getting nothing
+        // back is being told the honest answer rather than being failed.
+        for (raw, talent) in reg.talents.iter().enumerate() {
+            let Some(focus) = talent.changes() else { continue };
+            let name = reg
+                .names
+                .talents
+                .get(raw)
+                .ok_or_else(|| anyhow!("talent descriptor {raw} has no name-table entry"))?;
+            let global = self
+                .talent_ids
+                .get(name)
+                .ok_or_else(|| anyhow!("talent `{name}` was not interned"))?;
+            self.talent_focus.insert(global, self.globalize_focus(focus, &reg.names)?);
+        }
         self.navmeshes.extend(reg.navmeshes.iter().cloned());
         Ok(())
+    }
+
+    /// One focus in the global id space.
+    ///
+    /// A slot crosses nothing — it is a position on the caster's bar and means the
+    /// same thing in every mod, which is why it is the shape a HUD can act on at
+    /// once. An ability is a local handle and has to be re-keyed, and one its own
+    /// mod never named is a broken registration rather than a focus to drop: a
+    /// talent silently about nothing is a plate an author cannot find the cause of.
+    fn globalize_focus(&self, focus: AbilityFocus, names: &Names) -> Result<AbilityFocus> {
+        match focus {
+            AbilityFocus::Slot(slot) => Ok(AbilityFocus::Slot(slot)),
+            AbilityFocus::Ability(local) => {
+                let name = names.abilities.get(local.0 as usize).ok_or_else(|| {
+                    anyhow!("talent is about ability handle {} with no name-table entry", local.0)
+                })?;
+                let global = self
+                    .ability_ids
+                    .get(name)
+                    .ok_or_else(|| anyhow!("ability `{name}` was not interned"))?;
+                Ok(AbilityFocus::Ability(global))
+            }
+        }
     }
 
     /// One tree with every option translated into the global talent id space.
@@ -546,6 +598,17 @@ impl ClientHost {
     #[must_use]
     pub fn talent_name(&self, id: TalentId) -> Option<&str> {
         self.talent_ids.resolve(id)
+    }
+
+    /// Which of the caster's abilities each talent changes, as `(global talent id,
+    /// focus)` in id order — how the client fills the table a hotkey plate is drawn
+    /// from (server#129).
+    ///
+    /// Only the talents where that question has a single answer appear. A talent
+    /// selecting by tag, changing no ability, or granting two of them is absent,
+    /// because naming one of its buttons would be a label that is confidently wrong.
+    pub fn talent_focus(&self) -> impl Iterator<Item = (TalentId, AbilityFocus)> {
+        self.talent_focus.iter().map(|(id, focus)| (*id, *focus))
     }
 
     /// Every declared talent as `(global id, name)`, in interning order — how the
