@@ -7,6 +7,7 @@
 mod client;
 mod client_aiming;
 mod client_id_bridge;
+mod client_talent_focus;
 mod client_talent_names;
 mod client_ui_action_bridge;
 mod client_ui_bridge;
