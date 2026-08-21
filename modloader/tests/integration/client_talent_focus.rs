@@ -21,10 +21,10 @@ use std::io::{Cursor, Write};
 
 use stormlight_mod_abi::common::NumOp;
 use stormlight_mod_abi::descriptors::{Names, Registration};
+use stormlight_mod_abi::ids::StackId;
 use stormlight_mod_abi::ids::{AbilityId, ParamId, Slot, TalentId};
 use stormlight_mod_abi::manifest::ABI_VERSION;
 use stormlight_mod_abi::math::Value;
-use stormlight_mod_abi::ids::StackId;
 use stormlight_mod_abi::talents::{
     AbilityFocus, AbilitySelector, GrantAbility, ParamPatch, QuestSpec, TalentDescriptor,
 };
@@ -80,7 +80,12 @@ fn grants(id: u32, slot: u8, ability: u32) -> TalentDescriptor {
 }
 
 /// A gameplay `.zip` whose registration is exactly these names and talents.
-fn gameplay(id: &str, abilities: &[&str], talents: &[&str], declared: Vec<TalentDescriptor>) -> Vec<u8> {
+fn gameplay(
+    id: &str,
+    abilities: &[&str],
+    talents: &[&str],
+    declared: Vec<TalentDescriptor>,
+) -> Vec<u8> {
     let reg = Registration {
         abi: ABI_VERSION,
         names: Names {

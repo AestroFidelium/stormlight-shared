@@ -27,8 +27,8 @@ use stormlight_mod_abi::manifest::{ABI_VERSION, ModKind};
 use stormlight_mod_abi::navmesh::NavMeshDescriptor;
 use stormlight_mod_abi::notify::{NotifyAction, NotifyPoint};
 use stormlight_mod_abi::remap::RemapIds;
-use stormlight_mod_abi::talents::{AbilityFocus, QuestSpec};
 use stormlight_mod_abi::talent_tree::TalentTree;
+use stormlight_mod_abi::talents::{AbilityFocus, QuestSpec};
 use stormlight_mod_abi::ui::UiRoot;
 use stormlight_mod_abi::visuals::{ClientRegistration, EffectRole, TalentInfo, VisualModel};
 
