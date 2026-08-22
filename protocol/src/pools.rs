@@ -179,8 +179,12 @@ pub fn serialize_fns() -> SerializeFns<ReplicatedPools> {
 /// drawn on its `Interpolated` copy, the player's own hero only on its
 /// `Predicted` one (server#50), and the owner's resource orb is the single most
 /// read piece of UI in the game.
+///
+/// Unpredicted for the same reason too (server#86): spending is decided by the
+/// server and simulated by nobody on the client, so a predicted wallet would
+/// never move on the one mirror that draws the player's own orb. See
+/// [`crate::vitals::register`].
 pub fn register(app: &mut App) {
     app.register_component_custom_serde::<ReplicatedPools>(serialize_fns())
-        .add_interpolation_with(lerp_pools)
-        .add_prediction();
+        .add_interpolation_with(lerp_pools);
 }
