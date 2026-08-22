@@ -46,20 +46,25 @@ pub fn register(app: &mut App) {
 
     app.register_event::<MoveOrder>().add_direction(NetworkDirection::ClientToServer);
 
-    // Replicate the fallback move speed and enable prediction on it
-    // (stormlight/server#50): a client predicting the unit it controls needs the
-    // authoritative speed on its ghost to advance at the right rate. Inert on the
-    // server (no prediction runs there).
-    app.register_component::<MoveSpeed>().add_prediction();
-
-    // And the turn rate, for the same reason and with the same consequence if it is
-    // missing. `predict_movement` reads an `Option<&TurnRate>`, so a component that
-    // never crosses the wire is not "absent" on the client — it is *silently the
-    // engine default*, while the server turns the same unit at whatever its content
-    // declared. The two halves then disagree by a fixed factor on every tick the
-    // unit is turning, and the correction reconciling them is what a player sees as
-    // the model snapping round in steps instead of sweeping.
-    app.register_component::<TurnRate>().add_prediction();
+    // Replicate the movement stats a predicting client reads (stormlight/server#50):
+    // the ghost of the unit it controls has to advance at the *authoritative* rate,
+    // not an engine default. `predict_movement` reads an `Option<&TurnRate>`, so a
+    // stat that never crosses the wire is not "absent" on the client — it is
+    // silently the default, while the server moves the same unit at whatever its
+    // content declared. The two halves then disagree by a fixed factor on every
+    // tick, and the correction reconciling them is what a player sees as the model
+    // snapping round in steps instead of sweeping.
+    //
+    // Replicated plainly, **not predicted** (stormlight/server#86). These are stats
+    // the client only ever *reads*; nothing on it simulates a unit getting faster.
+    // A predicted component is driven by the client's own simulation and reconciled
+    // only through a rollback, so a predicted speed stayed at whatever the unit
+    // spawned with — a buff or a talent moved the server's unit and the owner's
+    // ghost kept walking at the old rate, rubber-banding for as long as the change
+    // lasted. Unpredicted, replication writes each change straight onto the mirror.
+    // Inert on the server (no prediction runs there).
+    app.register_component::<MoveSpeed>();
+    app.register_component::<TurnRate>();
 }
 
 // ---------------------------------------------------------------------------

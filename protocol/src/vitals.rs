@@ -189,13 +189,20 @@ pub fn serialize_fns() -> SerializeFns<ReplicatedVitals> {
 /// Register the replicated vitals on both ends. Called from
 /// [`ProtocolPlugin`](crate::protocol::ProtocolPlugin) so the protocol matches.
 ///
-/// Registered to reach **both** client-side mirrors of a replicated unit, for the
-/// same reason [`UnitTag`](crate::identity::UnitTag) is: every other player's unit
-/// is drawn on its smoothed `Interpolated` copy, while the player's own hero is
-/// only ever `Predicted` (server#50). A bar has to appear over both — and the
-/// owner's own health bar is the one that matters most.
+/// A bar has to appear over **both** client-side mirrors of a replicated unit:
+/// every other player's unit is drawn on its smoothed `Interpolated` copy, while
+/// the player's own hero is only ever `Predicted` (server#50), and the owner's own
+/// health bar is the one that matters most.
+///
+/// Interpolated, **not predicted** (server#86). Prediction earns its cost for
+/// state the client itself simulates; a predicted component is driven by that
+/// simulation and reconciled with the server only through a rollback. Nothing on
+/// a client simulates taking damage, so a predicted bar sat at whatever it was
+/// when the unit spawned — the owner's own health never moved, while everybody
+/// else's tracked fine. Left unpredicted, replication writes each update straight
+/// onto the entity, which is all a projection of server-authoritative state ever
+/// wanted. Same rule as [`LifeState`](crate::death::LifeState) (server#61).
 pub fn register(app: &mut App) {
     app.register_component_custom_serde::<ReplicatedVitals>(serialize_fns())
-        .add_interpolation_with(lerp_vitals)
-        .add_prediction();
+        .add_interpolation_with(lerp_vitals);
 }

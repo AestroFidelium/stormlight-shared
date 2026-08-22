@@ -30,13 +30,15 @@ pub struct UnitTag(pub u32);
 ///
 /// Both matter, because the cosmetic layer resolves a unit's visual from its
 /// identity wherever that unit is drawn — and a controlled unit is only ever
-/// predicted, never interpolated. Without the prediction registration the one
-/// unit a player looks at all match is the one the id never reaches.
+/// predicted, never interpolated.
 ///
 /// A discrete id has no meaningful in-between, so the interpolation "lerp" is the
 /// identity — take the confirmed value (server#41/#44).
+///
+/// Reaching the predicted mirror needs no prediction registration (server#86):
+/// prediction is for state the client *simulates*, and a replicated component
+/// lands on the mirror either way. Registering an identity for prediction only
+/// bought a per-tick history buffer for a number that never changes.
 pub fn register(app: &mut App) {
-    app.register_component::<UnitTag>()
-        .add_interpolation_with(|_start, end, _t| end)
-        .add_prediction();
+    app.register_component::<UnitTag>().add_interpolation_with(|_start, end, _t| end);
 }
