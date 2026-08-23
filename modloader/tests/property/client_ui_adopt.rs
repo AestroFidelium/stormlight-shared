@@ -15,7 +15,8 @@ use bolero::{TypeGenerator, check};
 use stormlight_mod_abi::descriptors::Names;
 use stormlight_mod_abi::manifest::ABI_VERSION;
 use stormlight_mod_abi::ui::{
-    Layout, RootVisibility, Style, SummonGate, TextSource, UiRoot, UiSubject, Widget, WidgetKind,
+    Layout, RootVisibility, Strip, Style, SummonGate, TextSource, UiRoot, UiSubject, Widget,
+    WidgetKind,
 };
 use stormlight_mod_abi::visuals::ClientRegistration;
 use stormlight_modloader::client::AdoptedVisuals;
@@ -53,6 +54,7 @@ fn a_root(i: usize, brk: Break) -> UiRoot {
         when: RootVisibility::Always,
         summon: SummonGate::Ignored,
         subject: UiSubject::LocalPlayer,
+        strip: Strip::default(),
         root: widget(WidgetKind::Text { text: TextSource::Literal("hp".into()) }),
     };
     match brk {
