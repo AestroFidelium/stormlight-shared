@@ -17,6 +17,7 @@ pub mod progression;
 pub mod projectiles;
 pub mod protocol;
 pub mod quantize;
+pub mod roster;
 pub mod slots;
 pub mod stress;
 pub mod talents;

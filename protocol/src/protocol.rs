@@ -100,6 +100,12 @@ impl Plugin for ProtocolPlugin {
         // the controlling player alone, so no opponent reads your cooldowns.
         crate::slots::register(app);
 
+        // The match roster (stormlight/server#145): who is playing, on which side,
+        // and the unit each of them drives. The one replicated fact that is not
+        // about a body — it outlives one, and it reaches every client whether or
+        // not the body it describes is inside their interest area.
+        crate::roster::register(app);
+
         // Progression (stormlight/server#62): a unit's level, public because it
         // changes how you play against it, and the owner's own XP progress,
         // privileged because knowing when someone is about to level is knowing

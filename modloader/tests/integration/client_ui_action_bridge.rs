@@ -27,7 +27,8 @@ use stormlight_mod_abi::manifest::ABI_VERSION;
 use stormlight_mod_abi::math::Value;
 use stormlight_mod_abi::talent_tree::{RepickPolicy, TalentTier, TalentTree};
 use stormlight_mod_abi::ui::{
-    Layout, RootVisibility, Style, SummonGate, UiAction, UiRoot, UiSubject, Widget, WidgetKind,
+    Layout, RootVisibility, Strip, Style, SummonGate, UiAction, UiRoot, UiSubject, Widget,
+    WidgetKind,
 };
 use stormlight_mod_abi::units::UnitDescriptor;
 use stormlight_mod_abi::visuals::ClientRegistration;
@@ -159,6 +160,7 @@ fn cosmetic(events: &[&str]) -> Vec<u8> {
             when: RootVisibility::Always,
             summon: SummonGate::Ignored,
             subject: UiSubject::LocalPlayer,
+            strip: Strip::default(),
             root: a_widget(WidgetKind::Panel { children }),
         }],
         ..ClientRegistration::default()
@@ -230,6 +232,7 @@ fn a_trigger_handle_the_bundles_own_names_do_not_explain_is_refused() {
             when: RootVisibility::Always,
             summon: SummonGate::Ignored,
             subject: UiSubject::LocalPlayer,
+            strip: Strip::default(),
             root: a_widget(WidgetKind::Button {
                 action: UiAction::Trigger { event: EventId(7) },
                 children: Vec::new(),

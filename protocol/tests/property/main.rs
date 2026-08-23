@@ -15,6 +15,7 @@ mod pools;
 mod progression;
 mod projectile;
 mod quantize;
+mod roster;
 mod slots;
 mod talent_pick;
 mod turn_rate;

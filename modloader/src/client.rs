@@ -49,6 +49,10 @@ pub struct AdoptedVisuals {
     /// ability **name** its feedback visuals are keyed by. A picture rather than a
     /// [`VisualModel`]: an icon is a flat asset in a widget.
     by_icon: BTreeMap<String, String>,
+    /// The portrait each unit wears in an interface (server#145), keyed by the same
+    /// unit **name** its model is keyed by. A flat picture rather than a
+    /// [`VisualModel`], for the reason an ability icon is one: it lands in a widget.
+    by_unit_icon: BTreeMap<String, String>,
     /// What each talent is called, does and looks like (server#95), keyed by the
     /// talent **name** — the same bridge the icons cross, one family along. Words
     /// rather than a picture: a panel addresses a cell by tier and option index, so
@@ -158,6 +162,13 @@ impl AdoptedVisuals {
             })?;
             by_icon.insert(name.clone(), icon.image.clone());
         }
+        let mut by_unit_icon = BTreeMap::new();
+        for icon in &reg.unit_icons {
+            let name = reg.names.units.get(icon.unit.0 as usize).ok_or_else(|| {
+                anyhow!("unit icon references unit handle {} with no name-table entry", icon.unit.0)
+            })?;
+            by_unit_icon.insert(name.clone(), icon.image.clone());
+        }
         let mut by_card = BTreeMap::new();
         for card in &reg.cards {
             let name = reg.names.talents.get(card.talent.0 as usize).ok_or_else(|| {
@@ -219,6 +230,7 @@ impl AdoptedVisuals {
             by_name,
             by_effect,
             by_icon,
+            by_unit_icon,
             by_card,
             by_animation,
             by_notify_key,
@@ -248,6 +260,18 @@ impl AdoptedVisuals {
     /// Iterate the `(ability name, icon path)` pairs, in name order.
     pub fn icons(&self) -> impl Iterator<Item = (&String, &String)> {
         self.by_icon.iter()
+    }
+
+    /// The portrait declared for `unit_name`, if any — the flat picture a roster
+    /// row or a hero panel draws for that unit (server#145).
+    #[must_use]
+    pub fn unit_icon(&self, unit_name: &str) -> Option<&str> {
+        self.by_unit_icon.get(unit_name).map(String::as_str)
+    }
+
+    /// Iterate the `(unit name, portrait path)` pairs, in name order.
+    pub fn unit_icons(&self) -> impl Iterator<Item = (&String, &String)> {
+        self.by_unit_icon.iter()
     }
 
     /// The card declared for `talent_name`, if any — what a talent panel prints and
@@ -299,6 +323,7 @@ impl AdoptedVisuals {
         self.by_name.is_empty()
             && self.by_effect.is_empty()
             && self.by_icon.is_empty()
+            && self.by_unit_icon.is_empty()
             && self.by_card.is_empty()
             && self.by_animation.is_empty()
             && self.by_notify_key.is_empty()
@@ -335,6 +360,10 @@ pub struct ClientHost {
     /// [`icons_by_id`](ClientHost::icons_by_id) crosses the same name→global-id
     /// bridge the visuals cross (server#94).
     icons: BTreeMap<String, String>,
+    /// Each unit's portrait, keyed by unit name until
+    /// [`unit_icons_by_id`](ClientHost::unit_icons_by_id) crosses the same
+    /// name→global-id bridge the visuals cross (server#145).
+    unit_icons: BTreeMap<String, String>,
     /// Each talent's card, keyed by talent name until
     /// [`cards_by_id`](ClientHost::cards_by_id) crosses the same name→global-id
     /// bridge the icons cross (server#95).
@@ -424,6 +453,7 @@ impl ClientHost {
             visuals: BTreeMap::new(),
             effects: BTreeMap::new(),
             icons: BTreeMap::new(),
+            unit_icons: BTreeMap::new(),
             cards: BTreeMap::new(),
             animations: BTreeMap::new(),
             notify_effects: BTreeMap::new(),
@@ -690,6 +720,18 @@ impl ClientHost {
             .filter_map(|(name, image)| Some((self.ability_ids.get(name)?, image.as_str())))
     }
 
+    /// Every adopted unit portrait keyed by the **global `UnitId`** the wire
+    /// carries as [`UnitTag`](stormlight_shared::identity::UnitTag) and a roster row
+    /// carries as its unit link (server#145). A portrait for a unit no loaded
+    /// gameplay mod defines is skipped, exactly like
+    /// [`visuals_by_id`](Self::visuals_by_id) — the row then wears whatever its HUD
+    /// declared for an empty socket.
+    pub fn unit_icons_by_id(&self) -> impl Iterator<Item = (UnitId, &str)> {
+        self.unit_icons
+            .iter()
+            .filter_map(|(name, image)| Some((self.unit_ids.get(name)?, image.as_str())))
+    }
+
     /// Every adopted talent card keyed by the **global `TalentId`** the tier tables
     /// carry, the words and picture a panel shows for whichever cell offers that
     /// talent (server#95). A card for a talent no loaded gameplay mod declares is
@@ -734,6 +776,9 @@ impl ClientHost {
         }
         for (ability, image) in adopted.icons() {
             self.icons.insert(ability.clone(), image.clone());
+        }
+        for (unit, image) in adopted.unit_icons() {
+            self.unit_icons.insert(unit.clone(), image.clone());
         }
         for (talent, card) in adopted.cards() {
             self.cards.insert(talent.clone(), card.clone());
