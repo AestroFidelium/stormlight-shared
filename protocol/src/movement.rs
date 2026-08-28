@@ -47,6 +47,13 @@ pub fn register(app: &mut App) {
     // Inert on the server (no prediction runs there).
     app.register_component::<MoveSpeed>();
     app.register_component::<TurnRate>();
+
+    // The authoritative movement intent (stormlight/server#151). Replicated for
+    // the same reason the two stats above are, and left unpredicted for the same
+    // reason too: it is a statement *by* the authority, and a predicted copy would
+    // be driven by the client's own simulation and only reconciled through a
+    // rollback — which is the bug rather than the fix.
+    app.register_component::<MoveIntent>();
 }
 
 // ---------------------------------------------------------------------------
@@ -204,10 +211,18 @@ pub fn advance_mover(
 // ---------------------------------------------------------------------------
 
 /// The destination a unit is walking to — a world **XZ** ground point (stored as
-/// `Vec2(x, z)`). Set authoritatively server-side when a move order starts, and
-/// on the controlled unit's own client set locally the instant the order is issued
-/// so prediction starts the same tick (server#50). Removed on arrival. Not
-/// replicated — it is intent, derived identically on both ends from the order.
+/// `Vec2(x, z)`). Set authoritatively server-side when a leg starts, and on the
+/// controlled unit's own client set locally the instant an order that names a
+/// destination is issued, so prediction starts the same tick (server#50). Removed
+/// on arrival.
+///
+/// Not replicated. It used to be justified as "intent, derived identically on both
+/// ends from the order", and that stopped being true the moment anything but a
+/// plain click could write it: the client cannot derive an attack-move's leg, a
+/// chase, or a hold. What crosses the wire is [`MoveIntent`], which the mirror
+/// takes up into this (`adopt_move_intent`) — so this stays the one local thing
+/// both ends' movement law reads, and the authority reaches it through a value
+/// rather than by replicating a component the client also writes.
 #[derive(Component, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MoveGoal(pub Vec2);
 
@@ -218,6 +233,108 @@ pub struct MoveGoal(pub Vec2);
 /// server's `effective_move_speed`).
 #[derive(Component, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MoveSpeed(pub f32);
+
+/// What the **authority** is doing with a unit's locomotion this tick, replicated
+/// so the client predicting that unit integrates the inputs the server actually
+/// used (stormlight/server#151).
+///
+/// Prediction was built when a unit had exactly one source of motion: a plain leg
+/// the client itself ordered, from which it derived the same [`MoveGoal`] the
+/// server would. Everything the engine learned to do to a mover afterwards was
+/// invisible to the mirror — an attack-move's leg and a chase are goals the
+/// *server* writes, a hold stops a unit mid-swing without ending its leg, and a
+/// `move_speed` modifier moves the aggregated stat the mirror never read. Each of
+/// those made the mirror integrate different inputs from the authority, so every
+/// snapshot arrived as a correction instead of a confirmation, and a position
+/// corrected back and forth every tick yields a travel direction that flips every
+/// tick — which is what a player sees as the model spinning.
+///
+/// It is a **value that is always present**, never a set of markers whose absence
+/// is the signal: a removal reaches a mirror only through a rollback, so a marker
+/// that vanished on the server could stay latched on the client indefinitely.
+///
+/// Public rather than owner-scoped. The owner-scoped mechanism is a separate
+/// entity replicated to one peer ([`crate::slots`]), and this cannot use it — the
+/// component has to sit on the unit itself for the prediction to read it. What it
+/// reveals about an enemy (where it is walking, how fast) is already legible from
+/// watching the body it is attached to, which the same client is already
+/// receiving.
+#[derive(Component, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MoveIntent {
+    /// The ground point the authority is walking this unit to, `None` when it is
+    /// walking nowhere. Whatever wrote it — a plain leg, an attack-move's leg, a
+    /// chase tracking a target — reaches the mirror the same way.
+    pub goal: Option<Vec2>,
+    /// The rate the authority walks it at, world units/second: the aggregated
+    /// `move_speed` stat when the unit has one, else its declared fallback, and
+    /// zero while content is rooting it or it is dead.
+    ///
+    /// Content's suppressions live in here rather than in [`held`](Self::held)
+    /// because that is already how the server models them — a root *is* a speed of
+    /// zero — and because they are not tied to a leg: a rooted unit is rooted
+    /// whatever it has just been ordered to do.
+    pub speed: f32,
+    /// Whether the **engine** is holding this unit still without disturbing its
+    /// plan: mid-swing, or ordered to hold. Deliberately separate from a root, in
+    /// exactly the same way the server keeps `HoldingPosition` separate from a
+    /// `blocks_move` tag — see [`intent_suppresses`] for what the difference buys.
+    pub held: bool,
+    /// The heading the authority is holding it at while it is **not** travelling,
+    /// `None` while it is.
+    ///
+    /// A travelling unit's heading is derived from its travel by a law both ends
+    /// run ([`face_travel`]), so sending it would be sending something the mirror
+    /// already knows — and would churn the wire every tick of every walk. A unit
+    /// that is standing has no travel to derive one from, and the Combat phase is
+    /// turning it to face what it is swinging at, which nothing on the client can
+    /// infer.
+    pub facing: Option<f32>,
+}
+
+/// Whether the authority's hold applies to the leg a mirror is actually walking.
+///
+/// A hold is a statement about **the leg the authority knows about**, and scoping
+/// it that way is what keeps the head start alive. A unit standing in a fight is
+/// held with no goal at all — and that is precisely the state a player clicks out
+/// of. Applied unscoped, the stale hold would sit on the leg the client just
+/// ordered and the hero would not move until the round trip came back, which is
+/// the latency prediction exists to hide. Applied to the authority's own leg, an
+/// attack-move that stopped to swing stops on the mirror too.
+#[must_use]
+pub fn intent_suppresses(intent: &MoveIntent, walking_to: Vec2) -> bool {
+    intent.held && intent.goal == Some(walking_to)
+}
+
+/// The rate a predicting client walks a mirror toward `walking_to` at this tick:
+/// the authority's own number when it has told us one, else the replicated
+/// [`MoveSpeed`] fallback, and zero while the authority's hold applies.
+///
+/// The authority outranking the fallback is the whole of the fourth divergence in
+/// stormlight/server#151: the server prefers the aggregated `move_speed` stat and
+/// the mirror read `MoveSpeed`, so any modifier on that stat moved one end and not
+/// the other for as long as it lasted.
+#[must_use]
+pub fn predicted_speed(
+    intent: Option<&MoveIntent>,
+    fallback: Option<&MoveSpeed>,
+    walking_to: Vec2,
+) -> f32 {
+    match intent {
+        Some(intent) if intent_suppresses(intent, walking_to) => 0.0,
+        Some(intent) => intent.speed.max(0.0),
+        None => fallback.map_or(0.0, |m| m.0.max(0.0)),
+    }
+}
+
+/// The authority goal a mirror has already taken up.
+///
+/// Client-side bookkeeping, never replicated. It is what turns "the component was
+/// written" into "the authority actually changed its mind", and only the second
+/// of those may outrank the leg the player just ordered: an intent that ships
+/// because the unit's *heading* moved must not re-assert a goal — or the absence
+/// of one — over a fresh local head start.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+pub struct AdoptedGoal(pub Option<Vec2>);
 
 /// A unit's facing yaw (rotation about `+Y`), integrated toward its travel
 /// direction each Movement tick and written into `Transform.rotation` — so heading
@@ -388,17 +505,26 @@ pub fn predict_movement(
     time: Res<Time>,
     mut commands: Commands,
     mut q: Query<
-        (Entity, &MoveGoal, &MoveSpeed, Option<&TurnRate>, &mut Transform, Option<&mut MovePath>),
+        (
+            Entity,
+            &MoveGoal,
+            Option<&MoveIntent>,
+            Option<&MoveSpeed>,
+            Option<&TurnRate>,
+            &mut Transform,
+            Option<&mut MovePath>,
+        ),
         With<Predicted>,
     >,
 ) {
     let dt = time.delta_secs();
-    for (entity, goal, speed, turn, mut transform, mut path) in &mut q {
+    for (entity, goal, intent, base, turn, mut transform, mut path) in &mut q {
         let pos = Vec2::new(transform.translation.x, transform.translation.z);
         let cur_yaw = yaw_of(&transform);
         let turn_rate = turn_rate_of(turn);
         let target = steer_target(path.as_deref(), goal.0);
-        let step = advance_mover(pos, cur_yaw, target, speed.0.max(0.0), turn_rate, dt);
+        let speed = predicted_speed(intent, base, goal.0);
+        let step = advance_mover(pos, cur_yaw, target, speed, turn_rate, dt);
         transform.translation.x = step.pos.x;
         transform.translation.z = step.pos.y;
         if step.pos != pos {
@@ -408,6 +534,90 @@ pub fn predict_movement(
             commands.entity(entity).remove::<MoveGoal>();
             commands.entity(entity).remove::<MovePath>();
         }
+    }
+}
+
+/// Take up whatever the authority says a predicted mirror is walking to
+/// (stormlight/server#151) — the goal that the server wrote, whether or not this
+/// client is the thing that asked for it.
+///
+/// This is what ends the mirror's old job of *deriving* the current leg from the
+/// order it sent: an attack-move's leg, a chase the Combat phase writes, and a
+/// stop the mirror had no way to see all arrive here as an ordinary change of
+/// intent.
+///
+/// ## Why it compares rather than simply obeying
+///
+/// [`MoveIntent`] carries more than the goal, and its other fields move on their
+/// own — a heading churns while a standing unit turns to swing, a hold flips as a
+/// target walks in and out of reach. Every one of those ships the whole component,
+/// so an update lands constantly in exactly the state a player clicks out of.
+/// Obeying each arrival would re-assert "you are walking nowhere" over the leg the
+/// player just ordered, a tick after the head start wrote it — cancelling the very
+/// latency hiding prediction exists for. So this compares against [`AdoptedGoal`]
+/// rather than filtering on `Changed<MoveIntent>`: what may outrank a fresh local
+/// leg is the authority *changing its mind*, not the component being written.
+///
+/// The one thing that is always re-asserted is a goal the authority holds and the
+/// mirror does not: a mirror standing still while the authority walks is the bug
+/// itself, and it can never be a head start — a head start *has* a goal.
+#[allow(clippy::type_complexity)] // A Bevy query's data+filter tuple; idiomatic.
+pub fn adopt_move_intent(
+    mut commands: Commands,
+    mut movers: Query<
+        (Entity, &MoveIntent, Option<&mut AdoptedGoal>, Option<&mut MoveGoal>),
+        With<Predicted>,
+    >,
+) {
+    for (entity, intent, adopted, goal) in &mut movers {
+        let taken = adopted.as_deref().copied().unwrap_or_default();
+        let stale = taken.0 != intent.goal || (intent.goal.is_some() && goal.is_none());
+        match adopted {
+            Some(mut adopted) if adopted.0 != intent.goal => adopted.0 = intent.goal,
+            Some(_) => {}
+            None => {
+                commands.entity(entity).insert(AdoptedGoal(intent.goal));
+            }
+        }
+        if !stale {
+            continue;
+        }
+        match (intent.goal, goal) {
+            // Guarded, because writing a `Mut` marks it changed whatever the value
+            // — and a changed goal costs a fresh route through the navmesh.
+            (Some(target), Some(mut goal)) if goal.0 != target => goal.0 = target,
+            (Some(_), Some(_)) => {}
+            (Some(target), None) => {
+                commands.entity(entity).insert(MoveGoal(target));
+            }
+            (None, _) => {
+                commands.entity(entity).remove::<MoveGoal>().remove::<MovePath>();
+            }
+        }
+    }
+}
+
+/// Point a standing mirror where the authority is pointing its unit
+/// (stormlight/server#151).
+///
+/// A travelling unit's heading is derived from its travel by a law both ends run,
+/// so [`predict_movement`] already has it. A unit that is *not* travelling has no
+/// travel to derive one from, and the authority is turning it to face what it is
+/// swinging at — which nothing on this client can infer. That heading is the only
+/// one it is allowed to adopt, and only while the mirror agrees it is standing:
+/// pinning it onto a mirror that is walking a leg the authority has not seen yet
+/// would drag the model back to the angle it had before the player clicked.
+pub fn adopt_intent_facing(
+    mut movers: Query<(&MoveIntent, Option<&MoveGoal>, &mut Transform), With<Predicted>>,
+) {
+    for (intent, goal, mut transform) in &mut movers {
+        let Some(yaw) = intent.facing else { continue };
+        let travelling =
+            goal.is_some_and(|g| !intent_suppresses(intent, g.0) && intent.speed > 0.0);
+        if travelling {
+            continue;
+        }
+        transform.rotation = Quat::from_rotation_y(yaw);
     }
 }
 
@@ -447,6 +657,14 @@ pub struct PredictedMovementPlugin;
 
 impl Plugin for PredictedMovementPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(FixedUpdate, (plan_predicted_paths, predict_movement).chain());
+        // Adopting the authority's intent comes first: the leg planned and walked
+        // below is whichever one the server is actually running, not whichever one
+        // this client last asked for (stormlight/server#151). The facing is taken
+        // up last, after the walk has had its say about whether the unit moved.
+        app.add_systems(
+            FixedUpdate,
+            (adopt_move_intent, plan_predicted_paths, predict_movement, adopt_intent_facing)
+                .chain(),
+        );
     }
 }
