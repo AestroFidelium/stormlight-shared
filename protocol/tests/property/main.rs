@@ -9,6 +9,7 @@ mod cast_progress;
 mod death;
 mod impact;
 mod lerp_transform;
+mod move_intent;
 mod mover;
 mod orders;
 mod pools;
