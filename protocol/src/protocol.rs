@@ -123,9 +123,14 @@ impl Plugin for ProtocolPlugin {
         // sends the very `CastIntent` its keybind does.
         crate::ui::register(app);
 
-        // Player move orders (stormlight/server#47): a client asks its controlled
-        // unit to walk to a ground point; the server moves it authoritatively and
-        // replicates the Transform like any mover.
+        // The mover's replicated stats (stormlight/server#47/#50): what a
+        // predicting client needs to advance the unit it controls at the
+        // authoritative speed.
         crate::movement::register(app);
+
+        // Player orders (stormlight/server#90): the one client→server command
+        // saying what a unit should do next, and whether it replaces the plan or
+        // is appended to it. Ordered-reliable, because a plan is a sequence.
+        crate::orders::register(app);
     }
 }

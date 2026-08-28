@@ -88,6 +88,7 @@ fn bare_unit() -> UnitDescriptor {
         respawn: None,
         progression: None,
         turn_rate: None,
+        attack: None,
     }
 }
 
