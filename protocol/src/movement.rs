@@ -1,51 +1,33 @@
-//! Player **move order** on the wire (client→server).
+//! The **ground mover**: the kinematic law a unit walks by, the components that
+//! law reads, and the client-side prediction of it.
 //!
-//! A MOBA move command: the client asks its controlled unit to walk to a ground
-//! point. Only a request — the server is authoritative: it resolves the sender to
-//! the unit it controls (`ControlledBy`) and moves that unit itself, replicating
-//! the resulting `Transform` back like any other mover (so motion is as smooth as
-//! the `cube_demo` cubes). Reliable, unordered: a dropped order would strand the
-//! unit, but two orders need no mutual ordering — the latest simply wins.
+//! Everything here is shared rather than server-side because the client predicts
+//! the unit it controls (server#50) and must integrate it *identically* — the same
+//! step, the same turn, the same corridor. What a player asks a unit to do is a
+//! separate thing and lives in [`crate::orders`]; this module is only how a unit
+//! that has been asked actually moves.
 //!
-//! Content-free: a bare world-space point, nothing hero- or ability-specific.
-//! What "move" costs or how fast is the unit's own generic movement, server-side.
+//! Content-free: a speed, a turn rate and a ground point. What "move" costs or how
+//! fast is the unit's own generic movement, server-side.
 
 use core::f32::consts::{PI, TAU};
 
-use bevy::math::Vec3;
 use bevy::prelude::*;
 use lightyear::prelude::*;
 use serde::{Deserialize, Serialize};
 use stormlight_navigation::ActiveNavMesh;
 
-/// Client→server request to move the sender's controlled unit to `target`
-/// (world-space ground point). Only a request: the server validates ownership and
-/// moves the unit authoritatively; a sender that controls nothing is ignored.
-#[derive(Event, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub struct MoveOrder {
-    /// The world-space ground point to walk to.
-    pub target: Vec3,
-}
-
-/// Reliable channel the move orders ride. Unordered-reliable: every order is
-/// delivered (a lost move feels broken) but two orders need no ordering — the
-/// last one the server applies wins.
-pub struct MoveOrderChannel;
-
-/// Register the move-order wire contract on both ends: the reliable client→server
-/// [`MoveOrder`] channel + event. Called from
+/// Register the mover's replicated stats. Called from
 /// [`ProtocolPlugin`](crate::protocol::ProtocolPlugin) so server and client agree
-/// byte-for-byte. No entity mapping — the payload is a pure point.
+/// byte-for-byte.
+///
+/// Walking somewhere is no longer a message of its own: a move is one kind of
+/// [`OrderRequest`](crate::orders::OrderRequest) among the rest (server#90), so a
+/// plain click and a shift-queued leg travel the same door and land in the same
+/// queue. A separate move message would have been a second way to change a unit's
+/// intent that the queue never saw, which is exactly the state the queue exists
+/// to end.
 pub fn register(app: &mut App) {
-    app.add_channel::<MoveOrderChannel>(ChannelSettings {
-        mode: ChannelMode::UnorderedReliable(ReliableSettings::default()),
-        send_frequency: core::time::Duration::default(),
-        priority: 1.0,
-    })
-    .add_direction(NetworkDirection::ClientToServer);
-
-    app.register_event::<MoveOrder>().add_direction(NetworkDirection::ClientToServer);
-
     // Replicate the movement stats a predicting client reads (stormlight/server#50):
     // the ghost of the unit it controls has to advance at the *authoritative* rate,
     // not an engine default. `predict_movement` reads an `Option<&TurnRate>`, so a
@@ -222,7 +204,7 @@ pub fn advance_mover(
 // ---------------------------------------------------------------------------
 
 /// The destination a unit is walking to — a world **XZ** ground point (stored as
-/// `Vec2(x, z)`). Set authoritatively server-side from a player `MoveOrder`, and
+/// `Vec2(x, z)`). Set authoritatively server-side when a move order starts, and
 /// on the controlled unit's own client set locally the instant the order is issued
 /// so prediction starts the same tick (server#50). Removed on arrival. Not
 /// replicated — it is intent, derived identically on both ends from the order.
