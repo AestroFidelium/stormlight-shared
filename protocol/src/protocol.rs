@@ -75,6 +75,12 @@ impl Plugin for ProtocolPlugin {
         // Also registers the replicated `CastProgress` cast-indicator state.
         crate::cast::register(app);
 
+        // The swing (stormlight/server#152): present exactly while a unit is
+        // committed to a basic attack, carrying the window an animation is scaled
+        // to and the cosmetic key its shot is dressed by. The attack's half of
+        // what `CastProgress` does for a cast.
+        crate::swing::register(app);
+
         // Authoritative impact feedback (stormlight/server#36): the one-shot
         // "a shot landed here" event + its reliable channel. Server announces the
         // hit; each client plays a transient impact visual there.

@@ -21,6 +21,7 @@ pub mod quantize;
 pub mod roster;
 pub mod slots;
 pub mod stress;
+pub mod swing;
 pub mod talents;
 pub mod ui;
 pub mod vital_feed;

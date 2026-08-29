@@ -18,6 +18,7 @@ mod projectile;
 mod quantize;
 mod roster;
 mod slots;
+mod swing_progress;
 mod talent_pick;
 mod turn_rate;
 mod ui_trigger;
