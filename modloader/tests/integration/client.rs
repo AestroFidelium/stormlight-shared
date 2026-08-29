@@ -34,6 +34,7 @@ fn sample() -> ClientRegistration {
                 // Integer-valued so equality is exact after decode.
                 scale: 2.0,
                 yaw_offset: 0.0,
+                launch: Some("Ref_Launch".into()),
             },
         }],
         ..ClientRegistration::default()

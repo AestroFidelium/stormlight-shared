@@ -14,6 +14,7 @@
 //! clock ⇒ agreeing trajectories, so the local visual tracks the authoritative
 //! flight without streaming a single position.
 
+use bevy::ecs::entity::{EntityMapper, MapEntities};
 use bevy::math::Vec3;
 use bevy::prelude::*;
 use lightyear::prelude::*;
@@ -80,6 +81,30 @@ pub struct ProjectileFired {
     ///
     /// Never `0`: that value is reserved for an impact no shot produced.
     pub shot: u32,
+    /// The unit that fired it, mapped to the receiver's local entity on arrival —
+    /// `None` when the shot came from something the receiver cannot see, or from
+    /// no unit at all (stormlight/server#154).
+    ///
+    /// It rides along so a client can ask the shooter's **art** where the shot
+    /// leaves from: an attachment point is an animated bone, and only the client
+    /// has one. Without the shooter there is nothing to ask, and the drawing falls
+    /// back to `origin` — which is what every shot did before sockets existed, so
+    /// the fallback is not a degraded mode, it is the old one.
+    ///
+    /// A one-shot event is the right place for a mapped reference: it is resolved
+    /// against the entity map the moment it arrives, unlike a replicated component,
+    /// which resolves once and keeps a placeholder forever if it was early.
+    pub shooter: Option<Entity>,
+}
+
+impl MapEntities for ProjectileFired {
+    fn map_entities<M: EntityMapper>(&mut self, entity_map: &mut M) {
+        // The origin, the velocity and the two keys are plain values; the shooter
+        // is the only handle, and a shot from nobody stays from nobody.
+        if let Some(shooter) = &mut self.shooter {
+            *shooter = entity_map.get_mapped(*shooter);
+        }
+    }
 }
 
 /// Reliable channel the one-shot launch events ride. Reliable (not per-tick) so a
@@ -100,5 +125,9 @@ pub fn register(app: &mut App) {
     })
     .add_direction(NetworkDirection::ServerToClient);
 
-    app.register_event::<ProjectileFired>().add_direction(NetworkDirection::ServerToClient);
+    app.register_event::<ProjectileFired>()
+        // The shooter is an entity handle, so the launch has to be mapped into the
+        // receiver's own world (stormlight/server#154).
+        .add_map_entities()
+        .add_direction(NetworkDirection::ServerToClient);
 }
