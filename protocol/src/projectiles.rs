@@ -68,6 +68,18 @@ pub struct ProjectileFired {
     /// — the client draws its neutral placeholder. Content-free: an opaque id,
     /// never a hero/ability name.
     pub vfx: u32,
+    /// Which shot this is — an opaque id, unique among the shots in flight, echoed
+    /// by the [`ImpactEvent`](crate::impact::ImpactEvent) that ends it
+    /// (stormlight/server#153).
+    ///
+    /// The client's missile is a **local** body reconstructed from this event, not
+    /// a replicated entity, so an impact had no way to name the drawing it ends.
+    /// Without one, a shot could only be retired by flying its whole declared
+    /// range — and a shot that hits something well inside that range carried on
+    /// through it, which reads as a piercing attack that damages once.
+    ///
+    /// Never `0`: that value is reserved for an impact no shot produced.
+    pub shot: u32,
 }
 
 /// Reliable channel the one-shot launch events ride. Reliable (not per-tick) so a
