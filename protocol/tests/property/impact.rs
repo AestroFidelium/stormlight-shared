@@ -28,6 +28,9 @@ struct Scenario {
     vfx: u32,
     hit: bool,
     entity_bits: u32,
+    /// Which shot the impact ends — `0` for the common case where nothing
+    /// travelled (a melee blow, a zone tick, a notify burst).
+    shot: u32,
 }
 
 fn event(s: &Scenario) -> ImpactEvent {
@@ -36,6 +39,7 @@ fn event(s: &Scenario) -> ImpactEvent {
         vfx: s.vfx,
         // The generation half must be non-zero for `from_bits` to be a valid entity.
         victim: s.hit.then(|| Entity::from_bits(u64::from(s.entity_bits) | (1 << 32))),
+        shot: s.shot,
     }
 }
 

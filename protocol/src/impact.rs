@@ -43,6 +43,15 @@ pub struct ImpactEvent {
     /// it arrives, and a victim the receiver cannot see resolves to nothing and is
     /// simply ignored.
     pub victim: Option<Entity>,
+    /// The shot this impact ended, echoing
+    /// [`ProjectileFired::shot`](crate::projectiles::ProjectileFired::shot), or
+    /// `0` when no shot produced it (stormlight/server#153).
+    ///
+    /// **Zero is the common case**, not an error: a melee blow, a zone tick and a
+    /// notify-driven burst all land without anything having travelled. What the id
+    /// buys is the other case — the client retiring the drawing of the shot that
+    /// just landed, instead of letting it sail on to the end of its range.
+    pub shot: u32,
 }
 
 impl MapEntities for ImpactEvent {
