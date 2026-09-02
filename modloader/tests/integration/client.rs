@@ -35,6 +35,7 @@ fn sample() -> ClientRegistration {
                 scale: 2.0,
                 yaw_offset: 0.0,
                 launch: Some("Ref_Launch".into()),
+                impact: Some("Ref_Target".into()),
             },
         }],
         ..ClientRegistration::default()
