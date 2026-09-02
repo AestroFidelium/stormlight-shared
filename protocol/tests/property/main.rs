@@ -17,6 +17,7 @@ mod progression;
 mod projectile;
 mod quantize;
 mod roster;
+mod shot_target;
 mod slots;
 mod swing_progress;
 mod talent_pick;

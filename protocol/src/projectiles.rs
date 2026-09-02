@@ -95,14 +95,39 @@ pub struct ProjectileFired {
     /// against the entity map the moment it arrives, unlike a replicated component,
     /// which resolves once and keeps a placeholder forever if it was early.
     pub shooter: Option<Entity>,
+    /// The unit it was aimed at, mapped to the receiver's local entity on arrival
+    /// — `None` when the shot was aimed at a direction or a point rather than at
+    /// anybody (stormlight/server#155).
+    ///
+    /// The counterpart of `shooter` at the other end of the flight, and it rides
+    /// along for the same reason: the point a shot is *drawn arriving on* is a
+    /// socket in the target's skeleton, and only the client has one to ask. Without
+    /// it the drawing keeps the authoritative velocity and flies parallel to the
+    /// real shot, missing the model by however far the muzzle sits from the
+    /// shooter's own anchor.
+    ///
+    /// Set only for a shot genuinely aimed at a unit. A skillshot resolves its
+    /// target to the caster, which is a resolution convenience and not something
+    /// aimed at, so it carries `None` and is drawn exactly where the server sent
+    /// it.
+    ///
+    /// It changes no hitbox, no range and no contact test: the server's flight is
+    /// what it always was, and this only says which rig the drawing may ask about
+    /// the far end.
+    pub target: Option<Entity>,
 }
 
 impl MapEntities for ProjectileFired {
     fn map_entities<M: EntityMapper>(&mut self, entity_map: &mut M) {
-        // The origin, the velocity and the two keys are plain values; the shooter
-        // is the only handle, and a shot from nobody stays from nobody.
+        // The origin, the velocity and the two keys are plain values; the two ends
+        // of the flight are the only handles. A shot from nobody stays from nobody,
+        // and a shot aimed at nobody stays unaimed — inventing either would point
+        // the drawing at whatever entity happens to hold that index here.
         if let Some(shooter) = &mut self.shooter {
             *shooter = entity_map.get_mapped(*shooter);
+        }
+        if let Some(target) = &mut self.target {
+            *target = entity_map.get_mapped(*target);
         }
     }
 }
