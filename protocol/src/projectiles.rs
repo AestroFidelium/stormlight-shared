@@ -15,7 +15,7 @@
 //! flight without streaming a single position.
 
 use bevy::ecs::entity::{EntityMapper, MapEntities};
-use bevy::math::Vec3;
+use bevy::math::{Vec2, Vec3};
 use bevy::prelude::*;
 use lightyear::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -48,10 +48,43 @@ pub fn projectile_expired(velocity: Vec3, range: f32, elapsed: f32) -> bool {
     projectile_traveled(velocity, elapsed) >= range.max(0.0)
 }
 
+/// One step of a **guided** flight: the same speed, turned onto the line to where
+/// the shot is going.
+///
+/// A guided shot is not a different kind of motion, it is the same motion re-aimed
+/// every tick — which is why both ends can run this and stay together without a
+/// single extra byte on the wire. The turn is instant, and that is the point: this
+/// is what separates a shot you cannot dodge from one you can. A body that should
+/// be dodgeable simply does not ask to be guided, and flies the line it left on.
+///
+/// **Turned on the ground plane only, with the climb left exactly as it was.** The
+/// simulation is planar and contact is decided on the ground
+/// (`ground_gap`), so a shot's height is how it *looks* and nothing else — and a
+/// guided shot that steered in three dimensions would nose down at the ground
+/// origin its target is tracked by, undoing the muzzle height that stops a shot
+/// skimming the floor. Turning the horizontal part and keeping the vertical one
+/// preserves both the horizontal speed and the total, so the distance odometer
+/// [`projectile_traveled`] keeps working and a guided shot still expires at its
+/// declared range.
+///
+/// A target standing exactly on the shot leaves the velocity alone — there is no
+/// direction to turn onto, and inventing one would send the shot off an axis.
+#[inline]
+#[must_use]
+pub fn home_velocity(from: Vec3, velocity: Vec3, toward: Vec3) -> Vec3 {
+    let ground_speed = Vec2::new(velocity.x, velocity.z).length();
+    let toward_flat = Vec2::new(toward.x - from.x, toward.z - from.z);
+    toward_flat.try_normalize().map_or(velocity, |dir| {
+        let turned = dir * ground_speed;
+        Vec3::new(turned.x, velocity.y, turned.y)
+    })
+}
+
 /// The one-shot "a projectile was launched" event, server→client. Small and
-/// fixed-size: the client reconstructs the whole flight from it via the shared
-/// motion law ([`projectile_position`]), so no per-tick `Transform` ever crosses
-/// the wire for the projectile. Content-free — a straight-line launch, nothing
+/// fixed-size: a straight shot's whole flight is reconstructed from it via the
+/// shared motion law ([`projectile_position`]), and a guided one is re-aimed by
+/// both ends with the same rule ([`home_velocity`]) — so no per-tick `Transform`
+/// ever crosses the wire for the projectile either way. Content-free — a straight-line launch, nothing
 /// hero- or ability-specific; a mod's client half chooses the mesh/VFX.
 #[derive(Event, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ProjectileFired {
@@ -69,6 +102,14 @@ pub struct ProjectileFired {
     /// — the client draws its neutral placeholder. Content-free: an opaque id,
     /// never a hero/ability name.
     pub vfx: u32,
+    /// Whether this shot is **guided**: re-aimed at `target` every step instead of
+    /// flying the line it left on (stormlight/server#158).
+    ///
+    /// The distinction is the whole of "can I dodge this": a catapult lobs a shot
+    /// at where you were and you walk out of it, and a fighter's arrow follows you
+    /// until it lands. Both ends run [`home_velocity`], so the drawing curves with
+    /// the real shot rather than being told about it.
+    pub homing: bool,
     /// Which shot this is — an opaque id, unique among the shots in flight, echoed
     /// by the [`ImpactEvent`](crate::impact::ImpactEvent) that ends it
     /// (stormlight/server#153).

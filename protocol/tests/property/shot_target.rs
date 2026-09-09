@@ -59,6 +59,9 @@ fn launch(s: &Scenario) -> ProjectileFired {
         shot: s.shot,
         shooter: s.has_shooter.then(|| entity(s.shooter_bits)),
         target: s.has_target.then(|| entity(s.target_bits)),
+        // Generated both ways: a guided shot's target is the one the simulation
+        // follows, and the mapping has to reach it either way.
+        homing: s.has_target,
     }
 }
 
