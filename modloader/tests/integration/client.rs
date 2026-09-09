@@ -12,7 +12,7 @@ use std::io::{Cursor, Write};
 use stormlight_mod_abi::descriptors::Names;
 use stormlight_mod_abi::ids::UnitId;
 use stormlight_mod_abi::manifest::ABI_VERSION;
-use stormlight_mod_abi::visuals::{ClientRegistration, VisualDescriptor, VisualModel};
+use stormlight_mod_abi::visuals::{ClientRegistration, VisualDescriptor, ModelClips, VisualModel};
 use stormlight_modloader::client::ClientHost;
 use zip::write::SimpleFileOptions;
 
@@ -36,6 +36,9 @@ fn sample() -> ClientRegistration {
                 yaw_offset: 0.0,
                 launch: Some("Ref_Launch".into()),
                 impact: Some("Ref_Target".into()),
+                // Named on both sides so the round trip carries the cycle a piece
+                // of art plays on its own, not just its sockets.
+                clips: ModelClips { birth: "Birth".into(), live: "Stand".into() },
             },
         }],
         ..ClientRegistration::default()
