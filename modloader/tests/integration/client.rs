@@ -12,7 +12,7 @@ use std::io::{Cursor, Write};
 use stormlight_mod_abi::descriptors::Names;
 use stormlight_mod_abi::ids::UnitId;
 use stormlight_mod_abi::manifest::ABI_VERSION;
-use stormlight_mod_abi::visuals::{ClientRegistration, VisualDescriptor, ModelClips, VisualModel};
+use stormlight_mod_abi::visuals::{ClientRegistration, ModelClips, VisualDescriptor, VisualModel};
 use stormlight_modloader::client::ClientHost;
 use zip::write::SimpleFileOptions;
 
