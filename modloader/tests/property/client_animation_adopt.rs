@@ -54,6 +54,7 @@ fn an_animation(unit: u32, state: AnimState, empty: bool) -> AnimationDescriptor
                 vec![StateClip {
                     state,
                     clip: ClipRef { asset: "mod://c/rig.glb".to_string(), clip: "run".to_string() },
+                    window: None,
                     looping: true,
                     blend_in: 0.1,
                     blend_out: 0.1,

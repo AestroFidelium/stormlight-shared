@@ -83,6 +83,7 @@ fn an_animation(unit: u32, notifies: Vec<NotifyPoint>) -> AnimationDescriptor {
             states: vec![StateClip {
                 state: AnimState::Walk,
                 clip: ClipRef { asset: "mod://c/rig.glb".to_string(), clip: "walk".to_string() },
+                window: None,
                 looping: true,
                 blend_in: 0.1,
                 blend_out: 0.1,
