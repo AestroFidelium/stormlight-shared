@@ -123,6 +123,13 @@ impl Plugin for ProtocolPlugin {
         // has been taken, and what is still waiting on them.
         crate::talents::register(app);
 
+        // The owner's stack counters (stormlight/server#132): the running count
+        // behind a quest, and every other "how many times has this happened"
+        // reserve a mod keeps. Privileged for the reason its neighbours on that
+        // entity are — three casts from a payout is exactly when not to be
+        // contested.
+        crate::stacks::register(app);
+
         // Interface triggers (stormlight/server#69): a declared widget raising a
         // mod-defined event into that mod's own gameplay guest. The interface's
         // other two actions need no message of their own — a clicked ability slot

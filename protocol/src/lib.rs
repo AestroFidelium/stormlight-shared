@@ -20,6 +20,7 @@ pub mod protocol;
 pub mod quantize;
 pub mod roster;
 pub mod slots;
+pub mod stacks;
 pub mod stress;
 pub mod swing;
 pub mod talents;

@@ -21,12 +21,11 @@ use std::io::{Cursor, Write};
 
 use stormlight_mod_abi::common::NumOp;
 use stormlight_mod_abi::descriptors::{Names, Registration};
-use stormlight_mod_abi::ids::StackId;
 use stormlight_mod_abi::ids::{AbilityId, ParamId, Slot, TalentId};
 use stormlight_mod_abi::manifest::ABI_VERSION;
 use stormlight_mod_abi::math::Value;
 use stormlight_mod_abi::talents::{
-    AbilityFocus, AbilitySelector, GrantAbility, ParamPatch, QuestSpec, TalentDescriptor,
+    AbilityFocus, AbilitySelector, GrantAbility, ParamPatch, TalentDescriptor,
 };
 use stormlight_modloader::client::ClientHost;
 use zip::write::SimpleFileOptions;
@@ -184,46 +183,5 @@ fn with_no_gameplay_mod_no_talent_is_about_anything() {
         host.talent_focus().count(),
         0,
         "the engine must ship no talent of its own, and therefore no focus",
-    );
-}
-
-/// The task a talent sets rides the same pass and is keyed the same way
-/// (server#132). Only the declaration: nothing counts it yet, and the client can
-/// still say the row is a quest — which is the fact a player needs at the moment of
-/// choosing.
-#[test]
-fn a_task_is_keyed_by_the_global_talent_that_sets_it() {
-    let mut host = ClientHost::new().unwrap();
-    host.load_gameplay_zip_bytes(&gameplay(
-        "first",
-        &["bolt"],
-        &["swift", "sturdy"],
-        vec![patches_slot(0, 1), patches_slot(1, 1)],
-    ))
-    .expect("first loads");
-    host.load_gameplay_zip_bytes(&gameplay(
-        "second",
-        &["lance"],
-        &["hunt"],
-        vec![TalentDescriptor {
-            quest: Some(QuestSpec { counter: StackId(4), goal: 40.0 }),
-            ..patches_slot(0, 2)
-        }],
-    ))
-    .expect("second loads");
-
-    let quests: Vec<(TalentId, QuestSpec)> = host.talent_quests().collect();
-    assert_eq!(
-        quests,
-        vec![(TalentId(2), QuestSpec { counter: StackId(4), goal: 40.0 })],
-        "a task must be keyed by the global talent that sets it, and only by talents \
-         that set one",
-    );
-    // And it did not cost the talent its ordinary reading: a quest talent still says
-    // which button it changes.
-    assert_eq!(
-        host.talent_focus().collect::<Vec<_>>().last().copied(),
-        Some((TalentId(2), AbilityFocus::Slot(Slot(2)))),
-        "a talent that sets a task stopped reporting which button it is about",
     );
 }

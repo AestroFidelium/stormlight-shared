@@ -26,7 +26,7 @@ use stormlight_mod_abi::interner::Interner;
 use stormlight_mod_abi::manifest::{ABI_VERSION, ModKind};
 use stormlight_mod_abi::navmesh::NavMeshDescriptor;
 use stormlight_mod_abi::notify::{NotifyAction, NotifyPoint};
-use stormlight_mod_abi::remap::RemapIds;
+use stormlight_mod_abi::remap::{IdMap, RemapIds};
 use stormlight_mod_abi::talent_tree::TalentTree;
 use stormlight_mod_abi::talents::{AbilityFocus, QuestSpec};
 use stormlight_mod_abi::ui::UiRoot;
@@ -565,12 +565,21 @@ impl ClientHost {
             if let Some(focus) = talent.changes() {
                 self.talent_focus.insert(global, self.globalize_focus(focus, &reg.names)?);
             }
-            // The task it sets, if it sets one (server#132). The counter is kept as
-            // the mod named it: nothing client-side reads a stack counter yet, and
-            // re-keying a handle into a family the client does not intern would be
-            // inventing an id rather than translating one.
-            if let Some(quest) = talent.quest {
-                self.talent_quests.insert(global, quest);
+            // The task it sets, if it sets one (server#132). The counter **is**
+            // re-keyed now that a client reads one: it names the same stack family
+            // a HUD's own `Pool` binding names, and the binding bridge interns that
+            // family in the server's own order — so the id here is the id the
+            // owner's replicated counters arrive under.
+            //
+            // The prize is deliberately dropped. A client never pays a quest out;
+            // carrying an `Impact` tree full of handles nothing here has translated
+            // would be keeping ids that mean another mod's content, waiting for
+            // somebody to read them.
+            if let Some(quest) = &talent.quest {
+                let counter =
+                    LocalToGlobal::new(&reg.names, &mut self.binding_ids).stack(quest.counter)?;
+                self.talent_quests
+                    .insert(global, QuestSpec { counter, goal: quest.goal, reward: Vec::new() });
             }
         }
         self.navmeshes.extend(reg.navmeshes.iter().cloned());
@@ -664,9 +673,11 @@ impl ClientHost {
     /// order — how the client fills the table a quest mark is drawn from
     /// (server#132).
     ///
-    /// Only the talents that declare one, which is almost none of them.
-    pub fn talent_quests(&self) -> impl Iterator<Item = (TalentId, QuestSpec)> {
-        self.talent_quests.iter().map(|(id, quest)| (*id, *quest))
+    /// Only the talents that declare one, which is almost none of them. The
+    /// counter is already in the client's own id space and the reward is empty —
+    /// see [`adopt_gameplay`](Self::adopt_gameplay).
+    pub fn talent_quests(&self) -> impl Iterator<Item = (TalentId, &QuestSpec)> {
+        self.talent_quests.iter().map(|(id, quest)| (*id, quest))
     }
 
     /// Every declared talent as `(global id, name)`, in interning order — how the
