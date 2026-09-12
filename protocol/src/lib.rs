@@ -24,6 +24,7 @@ pub mod stacks;
 pub mod stress;
 pub mod swing;
 pub mod talents;
+pub mod tasks;
 pub mod ui;
 pub mod vital_feed;
 pub mod vitals;

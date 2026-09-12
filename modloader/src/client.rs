@@ -423,6 +423,10 @@ pub struct ClientHost {
     /// all. Counting it is the effect system's and the running count is not on the
     /// wire, so this is a mark and a target and nothing else.
     talent_quests: BTreeMap<TalentId, QuestSpec>,
+    /// The tasks each unit carries of its own, with nothing chosen
+    /// (stormlight/server#139). Declaration order, because that order is the task's
+    /// identity. Only the units that declare one, which is almost none of them.
+    unit_tasks: BTreeMap<UnitId, Vec<QuestSpec>>,
     /// Map geometry declared by the loaded gameplay mods, in load order. The
     /// client bakes this into the same walkable region the server routes over, so
     /// it can draw the map and agree with the server about where a unit may stand
@@ -465,6 +469,7 @@ impl ClientHost {
             talent_trees: BTreeMap::new(),
             talent_focus: BTreeMap::new(),
             talent_quests: BTreeMap::new(),
+            unit_tasks: BTreeMap::new(),
             navmeshes: Vec::new(),
             binding_ids: BindingIds::new(),
             ui: Vec::new(),
@@ -536,7 +541,9 @@ impl ClientHost {
         // from raw 0, so a tree adopted verbatim would have the second mod's tier
         // offering the first mod's talents.
         for (raw, unit) in reg.units.iter().enumerate() {
-            let Some(tree) = &unit.talent_tree else { continue };
+            if unit.talent_tree.is_none() && unit.tasks.is_empty() {
+                continue;
+            }
             let name = reg
                 .names
                 .units
@@ -544,7 +551,25 @@ impl ClientHost {
                 .ok_or_else(|| anyhow!("unit descriptor {raw} has no name-table entry"))?;
             let global =
                 self.unit_ids.get(name).ok_or_else(|| anyhow!("unit `{name}` was not interned"))?;
-            self.talent_trees.insert(global, self.globalize_tree(tree, &reg.names)?);
+            if let Some(tree) = &unit.talent_tree {
+                self.talent_trees.insert(global, self.globalize_tree(tree, &reg.names)?);
+            }
+            // The unit's *own* tasks, with nothing chosen (server#139). Kept in
+            // declaration order, because that order is the task's identity — it is
+            // what the latch is keyed by and what a widget addresses one with.
+            //
+            // Stripped, like a talent's: a client never pays a task out. The counter
+            // is re-keyed for the same reason a talent's is — it names the stack
+            // family a HUD's own `Pool` binding names.
+            if !unit.tasks.is_empty() {
+                let mut tasks = Vec::with_capacity(unit.tasks.len());
+                for task in &unit.tasks {
+                    let counter = LocalToGlobal::new(&reg.names, &mut self.binding_ids)
+                        .stack(task.counter)?;
+                    tasks.push(QuestSpec { counter, ..task.stripped() });
+                }
+                self.unit_tasks.insert(global, tasks);
+            }
         }
         // Which of the caster's buttons each talent is about (server#129), keyed
         // and named in the global id space. A talent whose answer is not a single
@@ -679,6 +704,16 @@ impl ClientHost {
     /// see [`adopt_gameplay`](Self::adopt_gameplay).
     pub fn talent_quests(&self) -> impl Iterator<Item = (TalentId, &QuestSpec)> {
         self.talent_quests.iter().map(|(id, quest)| (*id, quest))
+    }
+
+    /// The tasks each unit carries of its own, in global id order
+    /// (stormlight/server#139).
+    ///
+    /// Declaration order within a unit, because that order is the only key such a
+    /// task has: it is what the simulation latches by and what a widget addresses
+    /// one with.
+    pub fn unit_tasks(&self) -> impl Iterator<Item = (UnitId, &[QuestSpec])> {
+        self.unit_tasks.iter().map(|(id, tasks)| (*id, tasks.as_slice()))
     }
 
     /// Every declared talent as `(global id, name)`, in interning order — how the
