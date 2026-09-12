@@ -33,9 +33,8 @@ use stormlight_mod_abi::ids::{BuffId, ParamId, Slot, StackId, TalentId};
 use stormlight_mod_abi::impacts::Impact;
 use stormlight_mod_abi::manifest::ABI_VERSION;
 use stormlight_mod_abi::math::Value;
-use stormlight_mod_abi::talents::{
-    AbilityFocus, AbilitySelector, ParamPatch, QuestSpec, TalentDescriptor,
-};
+use stormlight_mod_abi::talents::{AbilityFocus, AbilitySelector, ParamPatch, TalentDescriptor};
+use stormlight_mod_abi::tasks::QuestSpec;
 use stormlight_modloader::client::ClientHost;
 use zip::write::SimpleFileOptions;
 
@@ -128,22 +127,22 @@ fn a_counter_is_re_keyed_into_the_space_the_owners_counts_arrive_in() {
         "first",
         &["bolts_fired"],
         &["swift"],
-        vec![talent(0, Some(QuestSpec { counter: StackId(0), goal: 40.0, reward: prize() }))],
+        vec![talent(0, Some(QuestSpec::single(StackId(0), 40.0, prize())))],
     ))
     .expect("first loads");
     host.load_gameplay_zip_bytes(&gameplay(
         "second",
         &["blows_landed"],
         &["hunt"],
-        vec![talent(0, Some(QuestSpec { counter: StackId(0), goal: 10.0, reward: prize() }))],
+        vec![talent(0, Some(QuestSpec::single(StackId(0), 10.0, prize())))],
     ))
     .expect("second loads");
 
-    let quests: Vec<(TalentId, StackId, f32)> =
-        host.talent_quests().map(|(id, quest)| (id, quest.counter, quest.goal)).collect();
+    let quests: Vec<(TalentId, StackId, Option<f32>)> =
+        host.talent_quests().map(|(id, quest)| (id, quest.counter, quest.goal())).collect();
     assert_eq!(
         quests,
-        vec![(TalentId(0), StackId(0), 40.0), (TalentId(1), StackId(1), 10.0)],
+        vec![(TalentId(0), StackId(0), Some(40.0)), (TalentId(1), StackId(1), Some(10.0))],
         "two mods authoring the same local counter did not land on two global ones",
     );
 }
@@ -157,11 +156,14 @@ fn the_prize_does_not_cross() {
         "first",
         &["bolts_fired"],
         &["swift"],
-        vec![talent(0, Some(QuestSpec { counter: StackId(0), goal: 40.0, reward: prize() }))],
+        vec![talent(0, Some(QuestSpec::single(StackId(0), 40.0, prize())))],
     ))
     .expect("first loads");
 
-    let carried: Vec<usize> = host.talent_quests().map(|(_, quest)| quest.reward.len()).collect();
+    let carried: Vec<usize> = host
+        .talent_quests()
+        .map(|(_, quest)| (0..quest.rungs()).map(|rung| quest.reward(rung).len()).sum())
+        .collect();
     assert_eq!(carried, vec![0], "the client kept effects it can neither run nor read");
 }
 
@@ -176,7 +178,7 @@ fn a_counter_the_mod_never_named_is_refused() {
             "first",
             &[],
             &["swift"],
-            vec![talent(0, Some(QuestSpec { counter: StackId(4), goal: 40.0, reward: prize() }))],
+            vec![talent(0, Some(QuestSpec::single(StackId(4), 40.0, prize())))],
         ))
         .expect_err("a dangling counter must not load");
     assert!(
@@ -194,7 +196,7 @@ fn a_talent_that_sets_a_task_still_reports_the_button_it_changes() {
         "first",
         &["bolts_fired"],
         &["swift"],
-        vec![talent(0, Some(QuestSpec { counter: StackId(0), goal: 40.0, reward: prize() }))],
+        vec![talent(0, Some(QuestSpec::single(StackId(0), 40.0, prize())))],
     ))
     .expect("first loads");
 
