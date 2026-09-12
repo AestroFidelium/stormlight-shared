@@ -129,6 +129,7 @@ impl Plugin for ProtocolPlugin {
         // entity are — three casts from a payout is exactly when not to be
         // contested.
         crate::stacks::register(app);
+        crate::tasks::register(app);
 
         // Interface triggers (stormlight/server#69): a declared widget raising a
         // mod-defined event into that mod's own gameplay guest. The interface's
