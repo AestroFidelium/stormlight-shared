@@ -28,7 +28,8 @@ use stormlight_mod_abi::navmesh::NavMeshDescriptor;
 use stormlight_mod_abi::notify::{NotifyAction, NotifyPoint};
 use stormlight_mod_abi::remap::{IdMap, RemapIds};
 use stormlight_mod_abi::talent_tree::TalentTree;
-use stormlight_mod_abi::talents::{AbilityFocus, QuestSpec};
+use stormlight_mod_abi::talents::AbilityFocus;
+use stormlight_mod_abi::tasks::QuestSpec;
 use stormlight_mod_abi::ui::UiRoot;
 use stormlight_mod_abi::visuals::{ClientRegistration, EffectRole, TalentInfo, VisualModel};
 
@@ -571,15 +572,15 @@ impl ClientHost {
             // family in the server's own order — so the id here is the id the
             // owner's replicated counters arrive under.
             //
-            // The prize is deliberately dropped. A client never pays a quest out;
-            // carrying an `Impact` tree full of handles nothing here has translated
-            // would be keeping ids that mean another mod's content, waiting for
-            // somebody to read them.
+            // The prizes are deliberately dropped ([`QuestSpec::stripped`]). A client
+            // never pays a task out; carrying `Impact` trees full of handles nothing
+            // here has translated would be keeping ids that mean another mod's
+            // content, waiting for somebody to read them. The *thresholds* stay —
+            // they are what a bar is drawn against.
             if let Some(quest) = &talent.quest {
                 let counter =
                     LocalToGlobal::new(&reg.names, &mut self.binding_ids).stack(quest.counter)?;
-                self.talent_quests
-                    .insert(global, QuestSpec { counter, goal: quest.goal, reward: Vec::new() });
+                self.talent_quests.insert(global, QuestSpec { counter, ..quest.stripped() });
             }
         }
         self.navmeshes.extend(reg.navmeshes.iter().cloned());
