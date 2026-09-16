@@ -49,8 +49,13 @@ fn guest_wasm(payload: &[u8]) -> Vec<u8> {
 fn patches_slot(id: u32, slot: u8) -> TalentDescriptor {
     TalentDescriptor {
         id: TalentId(id),
-        selector: AbilitySelector::Slot(Slot(slot)),
-        patches: vec![ParamPatch { param: ParamId(0), op: NumOp::Add, value: Value::Const(1.0) }],
+        selector: vec![AbilitySelector::Slot(Slot(slot))],
+        patches: vec![ParamPatch {
+            param: ParamId(0),
+            op: NumOp::Add,
+            value: Value::Const(1.0),
+            selector: None,
+        }],
         riders: Vec::new(),
         add_reactions: Vec::new(),
         grants: Vec::new(),
@@ -63,7 +68,7 @@ fn patches_slot(id: u32, slot: u8) -> TalentDescriptor {
 /// A talent patching one **named** ability, wherever the caster carries it.
 fn patches_ability(id: u32, ability: u32) -> TalentDescriptor {
     TalentDescriptor {
-        selector: AbilitySelector::Ability(AbilityId(ability)),
+        selector: vec![AbilitySelector::Ability(AbilityId(ability))],
         ..patches_slot(id, 0)
     }
 }
@@ -71,7 +76,7 @@ fn patches_ability(id: u32, ability: u32) -> TalentDescriptor {
 /// A talent handing over a new button and patching nothing.
 fn grants(id: u32, slot: u8, ability: u32) -> TalentDescriptor {
     TalentDescriptor {
-        selector: AbilitySelector::Any,
+        selector: vec![AbilitySelector::Any],
         patches: Vec::new(),
         grants: vec![GrantAbility { slot: Slot(slot), ability: AbilityId(ability) }],
         ..patches_slot(id, 0)
@@ -162,7 +167,7 @@ fn a_talent_about_no_single_button_is_simply_absent() {
         &["bolt"],
         &["vague", "aimed"],
         vec![
-            TalentDescriptor { selector: AbilitySelector::Any, ..patches_slot(0, 0) },
+            TalentDescriptor { selector: vec![AbilitySelector::Any], ..patches_slot(0, 0) },
             patches_slot(1, 2),
         ],
     ))

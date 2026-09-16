@@ -57,8 +57,13 @@ fn guest_wasm(payload: &[u8]) -> Vec<u8> {
 fn talent(id: u32, quest: Option<QuestSpec>) -> TalentDescriptor {
     TalentDescriptor {
         id: TalentId(id),
-        selector: AbilitySelector::Slot(Slot(0)),
-        patches: vec![ParamPatch { param: ParamId(0), op: NumOp::Add, value: Value::Const(1.0) }],
+        selector: vec![AbilitySelector::Slot(Slot(0))],
+        patches: vec![ParamPatch {
+            param: ParamId(0),
+            op: NumOp::Add,
+            value: Value::Const(1.0),
+            selector: None,
+        }],
         riders: Vec::new(),
         add_reactions: Vec::new(),
         grants: Vec::new(),
