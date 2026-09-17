@@ -25,7 +25,7 @@ use stormlight_mod_abi::ids::{AbilityId, ParamId, Slot, TalentId};
 use stormlight_mod_abi::manifest::ABI_VERSION;
 use stormlight_mod_abi::math::Value;
 use stormlight_mod_abi::talents::{
-    AbilityFocus, AbilitySelector, GrantAbility, ParamPatch, TalentDescriptor,
+    AbilityFocus, AbilitySelector, GrantAbility, GrantTarget, ParamPatch, TalentDescriptor,
 };
 use stormlight_modloader::client::ClientHost;
 use zip::write::SimpleFileOptions;
@@ -78,7 +78,10 @@ fn grants(id: u32, slot: u8, ability: u32) -> TalentDescriptor {
     TalentDescriptor {
         selector: vec![AbilitySelector::Any],
         patches: Vec::new(),
-        grants: vec![GrantAbility { slot: Slot(slot), ability: AbilityId(ability) }],
+        grants: vec![GrantAbility {
+            ability: AbilityId(ability),
+            into: GrantTarget::Exact(Slot(slot)),
+        }],
         ..patches_slot(id, 0)
     }
 }

@@ -77,6 +77,7 @@ fn package(id: &str, kind: &str, payload: &[u8]) -> Vec<u8> {
 /// descriptor requires, so a fixture states only the tree it is about.
 fn bare_unit() -> UnitDescriptor {
     UnitDescriptor {
+        grant_slots: Vec::new(),
         id: UnitId(0),
         health: Value::Const(100.0),
         stats: Vec::new(),
@@ -97,6 +98,7 @@ fn bare_unit() -> UnitDescriptor {
 /// handle — exactly how a mod authors one.
 fn a_unit(tiers: &[(u8, &[u32])]) -> UnitDescriptor {
     UnitDescriptor {
+        grant_slots: Vec::new(),
         talent_tree: Some(TalentTree {
             tiers: tiers
                 .iter()
