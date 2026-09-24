@@ -2,8 +2,9 @@
 //! guests.
 //!
 //! A mod is untrusted input. The [`Host`] builds a wasmtime [`Engine`] with **no
-//! WASI and no ambient capabilities** — the only surface a guest sees is the
-//! host functions we register (none yet in M3's static pipeline). Two bounds
+//! WASI and no ambient capabilities** — the guest imports nothing at all. Data
+//! crosses only through the guest's own exports: the host pushes bytes in via
+//! `mod_alloc` and reads the result back out of linear memory. Two bounds
 //! keep a hostile or buggy guest from hanging or exhausting memory:
 //!
 //! - **Fuel** (deterministic, no background thread): every store starts with a
