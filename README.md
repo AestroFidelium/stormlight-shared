@@ -14,8 +14,10 @@ compiled to `wasm32-unknown-unknown`. This repository holds the engine-side
 code that both the server and the client depend on. The centrepiece is
 `stormlight_modloader`, the host those mods run inside.
 
-> Development happens in a private upstream that this repository is kept in
-> sync with. Issues and pull requests are welcome here.
+> This repository is a read-only mirror of a private upstream, where development
+> and planning happen. Bug reports and feedback are welcome as
+> [issues](https://github.com/AestroFidelium/stormlight-shared/issues); pull requests
+> are disabled.
 
 ## What a mod looks like
 
