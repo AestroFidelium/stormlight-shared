@@ -1,8 +1,8 @@
 # `shared` repo — code shared by server and client. Public.
 # A small workspace: the protocol/balance/macros library, the WASM modloader
 # host (used by both server and client to load mods), and the shared walkable-map
-# geometry both ends must agree on (server#79). Cross-repo path deps point
-# at sibling repos under the umbrella `stormlight/` folder.
+# geometry both ends must agree on. The one cross-repo dep (the mod ABI) is a
+# git dep on the public `sdk` repo.
 [workspace]
 resolver = "2"
 members = ["protocol", "modloader", "navigation"]
@@ -11,7 +11,7 @@ members = ["protocol", "modloader", "navigation"]
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-repository = "https://gitlab.com/stormlight/shared"
+repository = "https://github.com/AestroFidelium/stormlight-shared"
 
 [workspace.dependencies]
 # Wire protocol + host are headless: no rendering. Default features pull the
@@ -38,8 +38,10 @@ wasmtime = { version = "26", default-features = false }
 # codecs no mod package uses, two of which build C and so need a cross-compiler
 # configured for every target the engine ships to.
 zip = { version = "2", default-features = false, features = ["deflate"] }
-# Cross-repo: the mod ABI lives in the sibling `sdk` repo.
-stormlight_mod_abi = { path = "../sdk/schema" }
+# Cross-repo: the mod ABI lives in the `sdk` repo. A git dep so this repo builds
+# when cloned on its own; the umbrella folder's `.cargo/config.toml` patches it
+# back to the sibling checkout for local development.
+stormlight_mod_abi = { git = "https://github.com/AestroFidelium/stormlight-sdk.git", branch = "main" }
 # The walkable region both ends route over; the mover law needs the geometry it
 # is walking, so `protocol` depends on `navigation` and never the other way.
 stormlight_navigation = { path = "navigation" }

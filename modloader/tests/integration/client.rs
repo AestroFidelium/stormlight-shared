@@ -34,8 +34,8 @@ fn sample() -> ClientRegistration {
                 // Integer-valued so equality is exact after decode.
                 scale: 2.0,
                 yaw_offset: 0.0,
-                launch: Some("Ref_Launch".into()),
-                impact: Some("Ref_Target".into()),
+                launch: Some("launch_point".into()),
+                impact: Some("hit_point".into()),
                 // Named on both sides so the round trip carries the cycle a piece
                 // of art plays on its own, not just its sockets.
                 clips: ModelClips { birth: "Birth".into(), live: "Stand".into() },
