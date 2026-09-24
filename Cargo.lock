@@ -6281,6 +6281,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bolero",
+ "divan",
  "postcard",
  "serde",
  "stormlight_mod_abi",

@@ -1,0 +1,25 @@
+# The guest the host benches run: a real mod built with the public SDK, not a
+# hand-written `.wat`, so what is measured is what a mod actually costs. Not a
+# workspace member — it only ever builds for wasm32, driven by the bench itself.
+[package]
+name = "stormlight_bench_guest"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+stormlight_mod_sdk = { git = "https://github.com/AestroFidelium/stormlight-sdk.git", branch = "main" }
+
+[features]
+# 64 abilities instead of 2. Every runtime call re-runs the mod's builder, so the
+# per-call cost grows with the mod; the two sizes show by how much.
+large = []
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+
+[workspace]

@@ -134,6 +134,24 @@ caused it. The host process never unwinds on a mod's behalf. Because guests hold
 **no state between calls** (each entry re-runs the mod's builder in a fresh
 store), there is no half-updated guest state to recover afterwards.
 
+## What a call costs
+
+Measured with [divan](https://github.com/nvzqz/divan)
+(`cargo bench -p stormlight_modloader`) on an Intel i5-10400F. Medians:
+
+| | host alone | mod, 2 abilities | mod, 64 abilities |
+| --- | --- | --- | --- |
+| one runtime call (`mod_tick` / `mod_trigger` / `mod_handle`) | 13 µs | 32 µs | 105 µs |
+| loading a mod (compile + `mod_register`) | | 124 ms | 133 ms |
+
+*Host alone* is a guest whose entries return at once, so it measures only the
+host's own work: instantiate a fresh store, push the context, call, decode, drop.
+The rest is the price of stateless guests: every call re-runs the mod's builder,
+at about 1.2 µs per ability. The simulation ticks at 64 Hz (15.6 ms), so one call
+into a 64-ability mod uses about 0.7% of a tick. Loading is dominated by
+compiling the module and is paid once per session. Mods are real SDK builds, not
+hand-written wasm ([`benches/`](modloader/benches/)).
+
 ## Rigor
 
 - **`unsafe_code = "forbid"`** in every crate here. The only `unsafe` in the
@@ -168,9 +186,11 @@ this repository builds on its own.
   older SDK may fail to decode.
 - **The server and client are not public yet.** You can build, load and validate
   mods with `modload`, but you cannot play one from these repositories alone.
-- **One sync host, no async.** Calls are synchronous and each one instantiates
-  a fresh store. That keeps guests stateless and isolated, but it spends
-  instantiation time on every call.
+- **One sync host, no async.** Calls are synchronous, and each one
+  instantiates a fresh store and rebuilds the mod's tables. That keeps guests
+  stateless and isolated, at a measured 13 µs plus about 1.2 µs per declared
+  ability for every call (see above). A mod declaring hundreds of abilities and
+  called many times a tick would want instance reuse or a cached dispatch table.
 - **Registration buffers are leaked by design.** It is safe only because each
   store is dropped whole after the call.
 - **Requires nightly Rust** for the workspace (`rust-toolchain.toml`). Mods
