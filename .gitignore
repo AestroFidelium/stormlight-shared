@@ -53,3 +53,7 @@ heaptrack.*
 *.woff
 *.woff2
 *.wasm
+
+# The bench guest resolves against whichever SDK the build sees (public git or a
+# patched local checkout); pinning either would be wrong for the other.
+modloader/benches/guest/Cargo.lock

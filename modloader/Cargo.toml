@@ -31,6 +31,7 @@ stormlight_mod_abi = { workspace = true, features = ["std", "manifest-parse"] }
 tempfile = "3"
 wat = "1"
 bolero = { workspace = true }
+divan = { workspace = true }
 
 [[test]]
 name = "property"
@@ -44,3 +45,7 @@ path = "tests/integration/main.rs"
 [[test]]
 name = "systems"
 path = "tests/systems/main.rs"
+
+[[bench]]
+name = "host"
+harness = false
