@@ -34,30 +34,41 @@ register_mod!(|ctx: &mut ModContext| {
     let arcane = ctx.damage_type("arcane");
     let (hero, _) = ctx.register_tag_class("hero", "playable");
 
+    // What an average unit has, as curves over level. Balance is written
+    // as shares of it rather than as literals.
+    let base = Baseline::declare(ctx, BaselineSpec {
+        health: Curve { points: vec![[1.0, 500.0], [20.0, 1400.0]] },
+        move_speed: flat(4.5),
+        cooldown: flat(6.0),
+    });
+
     let guarded = ctx.buff("guarded", guarded(armor));
-    let spark = ctx.ability("spark", spark(cooldown, energy, arcane));
-    let guard = ctx.ability("guard", guard(cooldown, energy, guarded));
+    let spark = ctx.ability("spark", spark(&base, cooldown, energy, arcane));
+    let guard = ctx.ability("guard", guard(&base, cooldown, energy, guarded));
 
     ctx.unit("sentinel", UnitDescriptor {
+        health: base.health(pct(90)), // a little frailer than average
         tags: vec![hero],
         abilities: vec![(Slot(0), spark), (Slot(1), guard)],
-        resources: vec![ResourcePool { id: energy, max: Value::Const(100.0), /* … */ }],
-        /* health, stats, … */
+        /* stats, resource pools, … */
     });
 });
 
 /// A skillshot: spend energy, throw a missile, damage the first enemy it touches.
-fn spark(cooldown: ParamId, energy: ResourceId, arcane: DamageTypeId) -> AbilityDescriptor {
+fn spark(base: &Baseline, cooldown: ParamId, energy: ResourceId, arcane: DamageTypeId)
+    -> AbilityDescriptor
+{
     AbilityDescriptor {
         targeting: Targeting::Vector,
         cast: CastSpec::Cast { time: Value::Const(0.2), movable: true },
-        cost: vec![Cost::Resource { res: energy, amount: Value::Const(25.0) }],
-        params: Params(vec![(cooldown, Value::Const(3.0))]),
+        params: Params(vec![(cooldown, base.cooldown(pct(50)))]),
+        cost: vec![Cost::Resource { res: energy, amount: share_of(pct(25), Value::Const(ENERGY)) }],
         on_cast: vec![Impact::Spawn {
             body: BodyDescriptor {
                 kind: BodyKind::Missile { speed: Value::Const(18.0), /* range, … */ },
-                // The payload travels with the body and resolves on contact.
-                on_hit: vec![Impact::Damage { amount: Value::Const(90.0), dtype: arcane, /* … */ }],
+                // The payload travels with the body and resolves on contact:
+                // about six hits to down an average unit, at any level.
+                on_hit: vec![Impact::Damage { amount: base.damage(pct(18)), dtype: arcane, /* … */ }],
                 /* collides with enemies only */
             },
             /* … */
@@ -79,7 +90,7 @@ mod example v0.1.0 (Server)
   abilities: 2
   talents:   0
   buffs:     1
-  curves:    0
+  curves:    3
   tags:      1 (1 class links)
 ```
 
@@ -131,7 +142,7 @@ store), there is no half-updated guest state to recover afterwards.
   `deny` with each site explicitly allowed, so every one is auditable.
 - **Property-based and fuzz testing** with
   [bolero](https://github.com/camshaft/bolero): 198 tests in this workspace
-  (69 of them in the mod host) and 313 in the SDK. Most assert invariants over
+  (69 of them in the mod host) and 321 in the SDK. Most assert invariants over
   generated inputs rather than hand-picked values.
 - Tests are split by kind into separate binaries (`property/`, `fuzz/`,
   `integration/`, and `systems/` for headless Bevy schedules), with one small
