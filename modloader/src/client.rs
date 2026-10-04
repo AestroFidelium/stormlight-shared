@@ -21,12 +21,14 @@ use anyhow::{Result, anyhow, bail};
 use stormlight_mod_abi::abilities::Targeting;
 use stormlight_mod_abi::animation::{AnimState, AnimationDescriptor};
 use stormlight_mod_abi::descriptors::Names;
+use stormlight_mod_abi::environment::Environment;
 use stormlight_mod_abi::ids::{AbilityId, Handle, TalentId, UnitId};
 use stormlight_mod_abi::interner::Interner;
 use stormlight_mod_abi::manifest::{ABI_VERSION, ModKind};
 use stormlight_mod_abi::navmesh::NavMeshDescriptor;
 use stormlight_mod_abi::notify::{NotifyAction, NotifyPoint};
 use stormlight_mod_abi::remap::{IdMap, RemapIds};
+use stormlight_mod_abi::scenery::{HeightField, SceneryPiece, SceneryPlacement};
 use stormlight_mod_abi::talent_tree::TalentTree;
 use stormlight_mod_abi::talents::AbilityFocus;
 use stormlight_mod_abi::tasks::QuestSpec;
@@ -67,6 +69,26 @@ pub struct AdoptedVisuals {
     /// key to collide over; the order is the author's own back-to-front ordering
     /// of the interface, and sorting them would reorder the HUD.
     ui: Vec<UiRoot>,
+    /// The map scenery this mod declared, in declaration order. Like `ui`, a list:
+    /// nothing looks a piece up, so there is no key to merge on.
+    scenery: Vec<SceneryPiece>,
+    /// The height this mod's map draws units at, if it declares one.
+    ground: Option<HeightField>,
+    /// The light this mod's map is seen in, if it declares one.
+    environment: Option<Environment>,
+}
+
+/// Why a scenery placement cannot be drawn, if it cannot: a non-finite component
+/// puts the piece nowhere (or everywhere), and an all-zero quaternion is not a
+/// rotation at all.
+fn unplaceable(p: &SceneryPlacement) -> Option<&'static str> {
+    if p.translation.iter().chain(&p.rotation).chain(&p.scale).any(|v| !v.is_finite()) {
+        return Some("a non-finite component");
+    }
+    if p.rotation.iter().all(|c| *c == 0.0) {
+        return Some("a zero rotation");
+    }
+    None
 }
 
 /// A cosmetic effect key, qualified with the package that declared it
@@ -227,6 +249,27 @@ impl AdoptedVisuals {
         for root in &reg.ui {
             root.validate().map_err(|e| anyhow!("ui root `{}`: {e}", root.name))?;
         }
+        if let Some(ground) = &reg.ground
+            && !ground.is_valid()
+        {
+            bail!("ground height field is unusable (size, spacing or a non-finite sample)");
+        }
+        if let Some(environment) = &reg.environment
+            && !environment.is_valid()
+        {
+            bail!(
+                "environment is unusable (a non-finite or negative colour, a zero direction, or a non-positive exposure)"
+            );
+        }
+        // Scenery is checked here for the same reason: a placement that cannot be
+        // drawn is reported with its asset, or it is silently drawn nowhere.
+        for piece in &reg.scenery {
+            for (i, p) in piece.placements.iter().enumerate() {
+                if let Some(why) = unplaceable(p) {
+                    bail!("scenery `{}` placement {i} has {why}", piece.asset);
+                }
+            }
+        }
         Ok(Self {
             by_name,
             by_effect,
@@ -236,6 +279,9 @@ impl AdoptedVisuals {
             by_animation,
             by_notify_key,
             ui: reg.ui.clone(),
+            scenery: reg.scenery.clone(),
+            ground: reg.ground.clone(),
+            environment: reg.environment.clone(),
         })
     }
 
@@ -329,6 +375,27 @@ impl AdoptedVisuals {
             && self.by_animation.is_empty()
             && self.by_notify_key.is_empty()
             && self.ui.is_empty()
+            && self.scenery.is_empty()
+            && self.ground.is_none()
+            && self.environment.is_none()
+    }
+
+    /// The light this mod's map is seen in, if it declares one.
+    #[must_use]
+    pub fn environment(&self) -> Option<&Environment> {
+        self.environment.as_ref()
+    }
+
+    /// The height this mod's map draws units at, if it declares one.
+    #[must_use]
+    pub fn ground(&self) -> Option<&HeightField> {
+        self.ground.as_ref()
+    }
+
+    /// The map scenery this mod declared, in declaration order.
+    #[must_use]
+    pub fn scenery(&self) -> &[SceneryPiece] {
+        &self.scenery
     }
 
     /// The widget trees this mod declared, in declaration order — still in the
@@ -442,6 +509,15 @@ pub struct ClientHost {
     /// Every widget tree the loaded cosmetic mods declared, in load order, already
     /// translated into that global id space.
     ui: Vec<UiRoot>,
+    /// Every piece of map scenery the loaded cosmetic mods declared, appended in
+    /// load order. Carries no handle, so nothing needs translating.
+    scenery: Vec<SceneryPiece>,
+    /// The drawn ground height the loaded cosmetic mods declared; the last one
+    /// loaded wins, like any other map-wide setting.
+    ground: Option<HeightField>,
+    /// The map environment the loaded cosmetic mods declared; the last one loaded
+    /// wins, like the ground.
+    environment: Option<Environment>,
     /// Whether a cosmetic mod has been adopted yet. The binding bridge interns as
     /// it goes, so a gameplay mod arriving *after* a cosmetic one would intern its
     /// names above whatever that cosmetic already claimed, landing every one of
@@ -473,6 +549,9 @@ impl ClientHost {
             navmeshes: Vec::new(),
             binding_ids: BindingIds::new(),
             ui: Vec::new(),
+            scenery: Vec::new(),
+            ground: None,
+            environment: None,
             cosmetics_loaded: false,
         })
     }
@@ -847,6 +926,13 @@ impl ClientHost {
             roots.remap_ids(&map).map_err(|e| anyhow!("mod `{}`: {e}", loaded.manifest.id))?;
         }
         self.ui.extend(roots);
+        self.scenery.extend(adopted.scenery().iter().cloned());
+        if let Some(ground) = adopted.ground() {
+            self.ground = Some(ground.clone());
+        }
+        if let Some(environment) = adopted.environment() {
+            self.environment = Some(environment.clone());
+        }
         self.cosmetics_loaded = true;
         self.vfs.insert(loaded.manifest.id, source);
         Ok(())
@@ -866,6 +952,26 @@ impl ClientHost {
     #[must_use]
     pub fn visual(&self, unit_name: &str) -> Option<&VisualModel> {
         self.visuals.get(unit_name)
+    }
+
+    /// Every piece of map scenery the loaded cosmetic mods declared, in load order
+    /// and, within a mod, declaration order. Empty when no loaded mod dresses a
+    /// map, which is the content-free client drawing only the map's geometry.
+    #[must_use]
+    pub fn scenery(&self) -> &[SceneryPiece] {
+        &self.scenery
+    }
+
+    /// The drawn ground height the loaded cosmetic mods declared, if any.
+    #[must_use]
+    pub fn ground(&self) -> Option<&HeightField> {
+        self.ground.as_ref()
+    }
+
+    /// The map environment the loaded cosmetic mods declared, if any.
+    #[must_use]
+    pub fn environment(&self) -> Option<&Environment> {
+        self.environment.as_ref()
     }
 
     /// Resolve a `mod://<id>/<path>` asset URL to its bytes, staying within the
