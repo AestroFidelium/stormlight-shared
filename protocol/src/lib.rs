@@ -14,6 +14,7 @@ pub mod impact;
 pub mod movement;
 pub mod orders;
 pub mod pools;
+pub mod prediction_lead;
 pub mod progression;
 pub mod projectiles;
 pub mod protocol;

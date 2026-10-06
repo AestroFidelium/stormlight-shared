@@ -49,6 +49,11 @@ impl Plugin for ProtocolPlugin {
             // never predicts anything.
             .add_linear_correction_fn::<Isometry3d>();
 
+        // Keep the predicting client's timeline strictly ahead of the server, or a
+        // near-zero round trip leaves it level and every rollback check is skipped
+        // (stormlight/server#146). Inert on the server, which spawns no `Client`.
+        app.add_observer(crate::prediction_lead::lead_the_server);
+
         // Representative per-unit state components, registered on both ends so
         // the `cube_demo` stress test can measure how replication scales past a
         // lone Transform (stormlight/server#1). Registration is free until an
