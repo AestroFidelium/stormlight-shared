@@ -95,6 +95,11 @@ pub const AFFORDABLE: u8 = 1 << 0;
 /// and the caster carries no cast-blocking status.
 pub const UNGATED: u8 = 1 << 1;
 
+/// Flag bit: the ability in this slot is carried, not pressed (a passive,
+/// stormlight/server#189). Such a slot is never castable, and a bar draws it with
+/// no key.
+pub const PASSIVE: u8 = 1 << 2;
+
 /// One ability slot as its owner sees it.
 ///
 /// Deliberately *not* interpolated: a deadline is a discrete fact, and easing two
@@ -119,7 +124,8 @@ pub struct SlotState {
     /// what differs is whether the slot's costs actually draw on it.
     pub charges: u8,
     /// [`AFFORDABLE`] / [`UNGATED`] — the reasons a key greys out that are *not*
-    /// the cooldown. Kept as separate bits so the HUD can say which one it is.
+    /// the cooldown, kept as separate bits so the HUD can say which one it is —
+    /// and [`PASSIVE`], for a slot that is not a key at all.
     pub flags: u8,
 }
 
@@ -164,12 +170,18 @@ impl SlotState {
         self.flags & UNGATED != 0
     }
 
-    /// The verdict a bar greys out on: off cooldown, affordable, and unblocked.
-    /// The cooldown half is *derived* from the deadline rather than sent, so it
-    /// stays true between snapshots as the client's clock advances.
+    /// Whether the ability in this slot is a passive: carried, never pressed.
+    #[must_use]
+    pub fn passive(&self) -> bool {
+        self.flags & PASSIVE != 0
+    }
+
+    /// The verdict a bar greys out on: not a passive, off cooldown, affordable, and
+    /// unblocked. The cooldown half is *derived* from the deadline rather than
+    /// sent, so it stays true between snapshots as the client's clock advances.
     #[must_use]
     pub fn castable(&self, now: Tick) -> bool {
-        self.ready(now) && self.affordable() && self.ungated()
+        !self.passive() && self.ready(now) && self.affordable() && self.ungated()
     }
 }
 

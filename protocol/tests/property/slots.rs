@@ -205,12 +205,16 @@ fn castability_needs_the_cooldown_and_every_flag() {
     check!().with_type::<Scenario>().for_each(|s| {
         let (slots, now) = slots_of(s);
         for slot in &slots.0 {
-            let expected = slot.ready(now) && slot.affordable() && slot.ungated();
+            // A passive is never a live key, whatever else it says (server#189).
+            let expected =
+                !slot.passive() && slot.ready(now) && slot.affordable() && slot.ungated();
             assert_eq!(
                 slot.castable(now),
                 expected,
-                "slot {} disagreed with its own parts (ready {}, affordable {}, ungated {})",
+                "slot {} disagreed with its own parts \
+                 (passive {}, ready {}, affordable {}, ungated {})",
                 slot.slot,
+                slot.passive(),
                 slot.ready(now),
                 slot.affordable(),
                 slot.ungated()
