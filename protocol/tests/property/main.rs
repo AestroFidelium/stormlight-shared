@@ -19,6 +19,7 @@ mod projectile;
 mod quantize;
 mod roster;
 mod shot_target;
+mod slot_passive;
 mod slots;
 mod stacks;
 mod swing_progress;
