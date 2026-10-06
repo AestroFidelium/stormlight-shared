@@ -15,8 +15,8 @@
 //! rollback depth and input lead, both of which the margin was already spending.
 
 use bevy::prelude::*;
-use lightyear::prelude::SyncConfig;
 use lightyear::prelude::client::{Client, InputTimelineConfig};
+use lightyear::prelude::{SyncConfig, Tick};
 
 use crate::connection::tick_duration;
 
@@ -24,6 +24,19 @@ use crate::connection::tick_duration;
 /// top of half the round trip. Two rather than one: the sync tolerates about a
 /// tick of error before it steers, so a one-tick lead can still dip level.
 pub const PREDICTION_LEAD_TICKS: u32 = 2;
+
+/// The server tick a request the client sends now lands on, in the server's count.
+///
+/// The client runs half a round trip plus [`PREDICTION_LEAD_TICKS`] ahead of the
+/// server. The half round trip is spent in flight; the lead is not — so anything
+/// the client compares against a *server* deadline to decide whether a request
+/// would be accepted (a cooldown coming back up) must compare this, not its own
+/// tick, or it lights a key the lead's worth of ticks before the server takes it.
+#[must_use]
+pub fn arrival_tick(local: Tick) -> Tick {
+    // Tick space wraps, so the step back does too.
+    Tick(local.0.wrapping_sub(u16::try_from(PREDICTION_LEAD_TICKS).unwrap_or(u16::MAX)))
+}
 
 /// The sync configuration every predicting client runs with.
 #[must_use]
