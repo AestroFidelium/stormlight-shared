@@ -70,6 +70,7 @@ fn talent(id: u32, quest: Option<QuestSpec>) -> TalentDescriptor {
         modifiers: Vec::new(),
         tags: Vec::new(),
         quest,
+        volley: Vec::new(),
     }
 }
 

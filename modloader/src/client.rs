@@ -18,11 +18,11 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Result, anyhow, bail};
-use stormlight_mod_abi::abilities::Targeting;
+use stormlight_mod_abi::abilities::{Cost, Targeting};
 use stormlight_mod_abi::animation::{AnimState, AnimationDescriptor};
 use stormlight_mod_abi::descriptors::Names;
 use stormlight_mod_abi::environment::Environment;
-use stormlight_mod_abi::ids::{AbilityId, Handle, TalentId, UnitId};
+use stormlight_mod_abi::ids::{AbilityId, Handle, ResourceId, TalentId, UnitId};
 use stormlight_mod_abi::interner::Interner;
 use stormlight_mod_abi::manifest::{ABI_VERSION, ModKind};
 use stormlight_mod_abi::navmesh::NavMeshDescriptor;
@@ -460,6 +460,8 @@ pub struct ClientHost {
     /// records the declared [`Targeting`] alongside it, and the client resolves a
     /// keypress into an `Aim` of exactly that shape.
     aiming: BTreeMap<AbilityId, Targeting>,
+    /// Which global resource each ability pays its cost in (server#210).
+    costs: BTreeMap<AbilityId, ResourceId>,
     /// Each unit's declared talent tree, keyed by the **global `UnitId`** the wire
     /// carries and with its options already re-keyed to global `TalentId`s
     /// (server#69).
@@ -542,6 +544,7 @@ impl ClientHost {
             ability_ids: Interner::new(),
             talent_ids: Interner::new(),
             aiming: BTreeMap::new(),
+            costs: BTreeMap::new(),
             talent_trees: BTreeMap::new(),
             talent_focus: BTreeMap::new(),
             talent_quests: BTreeMap::new(),
@@ -614,6 +617,19 @@ impl ClientHost {
                 .get(name)
                 .ok_or_else(|| anyhow!("ability `{name}` was not interned"))?;
             self.aiming.insert(global, ability.targeting.clone());
+            // The resource it costs, re-keyed the same way: what an interface reading
+            // "the resource this ability costs" shows (server#210).
+            let pays = ability.cost.iter().find_map(|cost| match cost {
+                Cost::Resource { res, .. } => Some(*res),
+                Cost::Charge | Cost::Health { .. } => None,
+            });
+            if let Some(res) = pays {
+                let res =
+                    LocalToGlobal::new(&reg.names, &mut self.binding_ids).resource(res).map_err(
+                        |_| anyhow!("ability `{name}` costs a resource with no name-table entry"),
+                    )?;
+                self.costs.insert(global, res);
+            }
         }
         // Each unit's talent tree, re-keyed local→global on both ends: the unit it
         // hangs on and every talent its tiers offer (server#69). Both mods author
@@ -809,6 +825,13 @@ impl ClientHost {
     /// to build when a slot's key is pressed.
     pub fn aiming_by_id(&self) -> impl Iterator<Item = (AbilityId, &Targeting)> {
         self.aiming.iter().map(|(id, mode)| (*id, mode))
+    }
+
+    /// Every gameplay ability's cost resource, both keyed by **global** id — the
+    /// resource an interface binding of `PoolRef::AbilityCost` reads. An ability
+    /// that costs no resource has no entry (stormlight/server#210).
+    pub fn cost_resources_by_id(&self) -> impl Iterator<Item = (AbilityId, ResourceId)> + '_ {
+        self.costs.iter().map(|(ability, res)| (*ability, *res))
     }
 
     /// The map geometry the loaded gameplay mods declared, in load order. Empty

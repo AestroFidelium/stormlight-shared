@@ -5,6 +5,7 @@
 //! Keep invariants directional/structural, never magnitude-only.
 
 mod client;
+mod client_ability_cost;
 mod client_aiming;
 mod client_id_bridge;
 mod client_scenery;
