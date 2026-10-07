@@ -7,3 +7,4 @@
 mod region;
 mod spawn_point;
 mod wall_click;
+mod wall_crossing;

@@ -32,6 +32,8 @@
 //! toward you. They compose: routing hands the mover its next waypoint, avoidance
 //! decides how to get there this tick.
 
+use std::collections::HashMap;
+
 use bevy::prelude::*;
 use polyanya::{Mesh, Triangulation};
 use stormlight_mod_abi::navmesh::NavMeshDescriptor;
@@ -69,6 +71,50 @@ const SPAWN_MIN_RING: f32 = 0.15;
 /// enough to hug whatever sits in the middle, cheap enough to run per join.
 const SPAWN_RING_STEPS: u32 = 32;
 
+/// The edges of `mesh` that only one polygon owns — the region's outline and the
+/// rims of its holes — each in the winding of the polygon that owns it.
+///
+/// Polygons are wound counter-clockwise, so an owned edge keeps the walkable side
+/// on its left. An edge two polygons share is interior and is dropped: it is seen
+/// once in each direction, and the pair cancels.
+fn boundary_of(mesh: &Mesh) -> Box<[Edge]> {
+    // Only the base layer: this crate bakes exactly one.
+    let Some(layer) = mesh.layers.first() else { return Box::new([]) };
+    let mut owners: HashMap<(u32, u32), Option<(u32, u32)>> = HashMap::new();
+    for polygon in &layer.polygons {
+        let ring = &polygon.vertices;
+        for (index, &a) in ring.iter().enumerate() {
+            let Some(&b) = ring.get((index + 1) % ring.len()) else { continue };
+            owners
+                .entry((a.min(b), a.max(b)))
+                .and_modify(|seen| *seen = None)
+                .or_insert(Some((a, b)));
+        }
+    }
+    let vertex = |i: u32| layer.vertices.get(i as usize).map(|v| v.coords);
+    owners
+        .into_values()
+        .flatten()
+        .filter_map(|(a, b)| Some(Edge { from: vertex(a)?, to: vertex(b)? }))
+        .collect()
+}
+
+/// Where the segment `from + t·travel`, `t ∈ [0, 1]`, crosses `edge`, as `t`.
+///
+/// Parallel segments never cross: a move sliding exactly along a wall has not left
+/// through it, and the next edge it meets at an angle will answer instead.
+fn crossing(from: Vec2, travel: Vec2, edge: Edge) -> Option<f32> {
+    let along = edge.to - edge.from;
+    let denominator = travel.perp_dot(along);
+    if denominator == 0.0 {
+        return None;
+    }
+    let offset = edge.from - from;
+    let t = offset.perp_dot(along) / denominator;
+    let u = offset.perp_dot(travel) / denominator;
+    ((0.0..=1.0).contains(&t) && (0.0..=1.0).contains(&u)).then_some(t)
+}
+
 /// Why a descriptor could not be baked into a walkable region.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BakeError {
@@ -81,6 +127,36 @@ pub enum BakeError {
 pub struct NavMesh {
     mesh: Mesh,
     bounds: (Vec2, Vec2),
+    /// The region's outline as edges, each wound so the walkable side is on its
+    /// left — what [`Self::first_exit`] intersects a move against.
+    boundary: Box<[Edge]>,
+}
+
+/// One edge of the walkable region's boundary, wound with the region on its left.
+#[derive(Debug, Clone, Copy)]
+struct Edge {
+    from: Vec2,
+    to: Vec2,
+}
+
+impl Edge {
+    /// The unit normal pointing **out** of the walkable region.
+    fn outward(self) -> Vec2 {
+        let along = self.to - self.from;
+        Vec2::new(along.y, -along.x).normalize_or_zero()
+    }
+}
+
+/// Where a straight move first leaves the walkable region (stormlight/server#212).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Exit {
+    /// How far along the move it happens, as a fraction in `[0, 1]`.
+    pub fraction: f32,
+    /// The point on the boundary it crosses.
+    pub at: Vec2,
+    /// The crossed face's unit normal, pointing out of the walkable side — what a
+    /// move that ricochets reflects about.
+    pub normal: Vec2,
 }
 
 impl NavMesh {
@@ -118,7 +194,8 @@ impl NavMesh {
         // Pre-compute the search acceleration once, at bake, instead of paying it
         // on the first query in the middle of a tick.
         mesh.bake();
-        Ok(Self { mesh, bounds })
+        let boundary = boundary_of(&mesh);
+        Ok(Self { mesh, bounds, boundary })
     }
 
     /// The corridor from `from` to `to`: the ordered waypoints a mover walks,
@@ -285,6 +362,41 @@ impl NavMesh {
     #[must_use]
     pub fn bounds(&self) -> (Vec2, Vec2) {
         self.bounds
+    }
+
+    /// The first point at which the straight move `from → to` crosses the region's
+    /// boundary **outward**, or `None` if it never leaves (stormlight/server#212).
+    ///
+    /// Exact, not sampled: the segment is intersected with every boundary edge.
+    /// A sampler steps over any wall thinner than its spacing and, once its sample
+    /// count is capped, over thicker ones on a long enough move — which is how a
+    /// shove went through a wall. Crossing an edge *inward* is not leaving, so a
+    /// move that starts off the region and comes back onto it reports nothing.
+    ///
+    /// A move that starts exactly on the boundary and heads out leaves at once,
+    /// at fraction zero.
+    #[must_use]
+    pub fn first_exit(&self, from: Vec2, to: Vec2) -> Option<Exit> {
+        let length = from.distance(to);
+        // Nothing on the region is further from `from` than this, so no exit can lie
+        // beyond it. Intersecting the clipped segment keeps the answer exact for a
+        // move pointed a million units away: on the unclipped one, f32 resolution
+        // along the segment is coarser than a thin wall.
+        let (min, max) = self.bounds;
+        let reach = (max - min).length() + from.distance(from.clamp(min, max)) + 1.0;
+        let end = if length > reach { from + (to - from) * (reach / length) } else { to };
+        let travel = end - from;
+        self.boundary
+            .iter()
+            .filter(|edge| travel.dot(edge.outward()) > 0.0)
+            .filter_map(|edge| {
+                crossing(from, travel, *edge).map(|t| {
+                    let at = from + travel * t;
+                    let fraction = if length > 0.0 { from.distance(at) / length } else { 0.0 };
+                    Exit { fraction, at, normal: edge.outward() }
+                })
+            })
+            .min_by(|a, b| a.fraction.total_cmp(&b.fraction))
     }
 
     /// Whether a point is inside the walkable region.
