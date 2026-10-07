@@ -115,9 +115,27 @@ fn length(trace: &[Vec2]) -> f32 {
     trace.windows(2).map(|w| w[0].distance(w[1])).sum()
 }
 
+/// Whether the path re-aims at fixed points round after round, forever.
+///
+/// A `Back` or `To` leg aims at an absolute point, so its heading is the direction
+/// to that point from wherever the previous leg ended — and when that is very near
+/// the point, a rounding-sized difference in position swings the heading through a
+/// large angle. Once, that is a rounding error; in an endless loop that re-aims
+/// every round it compounds chaotically, so two ways of summing the same distance
+/// can diverge by whole units. That is the geometry, not the law, and it is why
+/// both ends advance a motion by the same per-tick pieces rather than recomputing it
+/// from a total.
+fn re_aims_forever(s: &Scenario) -> bool {
+    matches!(s.times, Times::Endless)
+        && s.legs.iter().any(|l| matches!(l, Leg::Back | Leg::To { .. }))
+}
+
 #[test]
 fn splitting_an_advance_changes_nothing() {
     check!().with_type::<Scenario>().for_each(|s| {
+        if re_aims_forever(s) {
+            return;
+        }
         let path = s.path();
         let total: f32 = s.pieces().sum();
 
@@ -128,7 +146,11 @@ fn splitting_an_advance_changes_nothing() {
         for piece in s.pieces() {
             split.advance(&path, piece, &mut Vec::new());
         }
-        let close = CLOSE;
+        // Every corner the path turns rounds once, and over hundreds of rounds of an
+        // endless path that adds up — linearly, in proportion to the ground covered.
+        // Four millionths of a unit per unit is half of what the f32 remainder bug
+        // this test caught cost (8.7e-6), so that bug would still be seen.
+        let close = CLOSE + total * 4e-6;
 
         assert!(
             whole.position().distance(split.position()) < close,

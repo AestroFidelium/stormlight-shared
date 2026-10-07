@@ -190,6 +190,35 @@ impl Cursor {
         self.finished
     }
 
+    /// How much of the leg it is in is left to travel.
+    #[must_use]
+    pub fn leg_left(&self) -> f32 {
+        (self.stretch.length - self.into).max(0.0)
+    }
+
+    /// Glance off a wall whose outward normal is `normal` (stormlight/server#215):
+    /// the rest of the current leg is travelled mirrored in the wall — the heading
+    /// reflected, a curve's bend turned the other way, its remaining length kept.
+    /// What follows the leg follows on from where the mirrored leg ends.
+    pub fn reflect(&mut self, path: &MotionPath, normal: Vec2) {
+        let Some(normal) = normal.try_normalize() else { return };
+        if self.finished {
+            return;
+        }
+        let (origin, facing) = self.stretch.at(self.into);
+        let heading =
+            (facing - 2.0 * facing.dot(normal) * normal).try_normalize().unwrap_or(facing);
+        self.stretch = Stretch {
+            origin,
+            heading,
+            length: self.leg_left(),
+            curvature: -self.stretch.curvature,
+        };
+        self.into = 0.0;
+        let mut steps = 0;
+        self.settle(path, &mut steps);
+    }
+
     /// Move `distance` further along `path`, appending the ground covered to
     /// `trace` as a polyline that starts where the unit was and ends where it now
     /// is. Nothing is appended when nothing is covered.

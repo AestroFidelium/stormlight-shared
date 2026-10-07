@@ -12,6 +12,7 @@ mod guidance;
 mod impact;
 mod lerp_transform;
 mod motion_path;
+mod motion_reflect;
 mod move_intent;
 mod mover;
 mod orders;
