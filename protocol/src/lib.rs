@@ -27,6 +27,7 @@ pub mod stress;
 pub mod swing;
 pub mod talents;
 pub mod tasks;
+pub mod time_scale;
 pub mod ui;
 pub mod vital_feed;
 pub mod vitals;
