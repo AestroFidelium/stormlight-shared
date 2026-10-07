@@ -70,6 +70,10 @@ impl Plugin for ProtocolPlugin {
         // live unit as live.
         crate::death::register(app);
 
+        // What is waiting to land on a unit in stopped time
+        // (stormlight/server#223), so a client can draw blows piling up on it.
+        crate::held::register(app);
+
         // Event-driven projectiles (stormlight/server#9): the one-shot launch
         // event + its reliable channel. Server emits, client simulates locally —
         // no per-tick Transform on the wire for a projectile.
