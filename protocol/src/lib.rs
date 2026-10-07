@@ -11,6 +11,7 @@ pub mod connection;
 pub mod death;
 pub mod identity;
 pub mod impact;
+pub mod motion;
 pub mod movement;
 pub mod orders;
 pub mod pools;
