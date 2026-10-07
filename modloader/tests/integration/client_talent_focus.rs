@@ -62,6 +62,7 @@ fn patches_slot(id: u32, slot: u8) -> TalentDescriptor {
         modifiers: Vec::new(),
         tags: Vec::new(),
         quest: None,
+        volley: Vec::new(),
     }
 }
 
