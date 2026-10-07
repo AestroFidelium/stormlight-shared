@@ -11,6 +11,7 @@ mod death;
 mod guidance;
 mod impact;
 mod lerp_transform;
+mod motion_path;
 mod move_intent;
 mod mover;
 mod orders;
