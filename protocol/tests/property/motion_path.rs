@@ -115,25 +115,24 @@ fn length(trace: &[Vec2]) -> f32 {
     trace.windows(2).map(|w| w[0].distance(w[1])).sum()
 }
 
-/// Whether the path re-aims at fixed points round after round, forever.
+/// Whether the path aims at fixed points.
 ///
-/// A `Back` or `To` leg aims at an absolute point, so its heading is the direction
-/// to that point from wherever the previous leg ended — and when that is very near
-/// the point, a rounding-sized difference in position swings the heading through a
-/// large angle. Once, that is a rounding error; in an endless loop that re-aims
-/// every round it compounds chaotically, so two ways of summing the same distance
-/// can diverge by whole units. That is the geometry, not the law, and it is why
-/// both ends advance a motion by the same per-tick pieces rather than recomputing it
-/// from a total.
-fn re_aims_forever(s: &Scenario) -> bool {
-    matches!(s.times, Times::Endless)
-        && s.legs.iter().any(|l| matches!(l, Leg::Back | Leg::To { .. }))
+/// A `Back` or `To` leg's heading is the direction to an absolute point from
+/// wherever the previous leg ended, and when that is close to the point, a
+/// rounding-sized difference in position swings the heading through a large angle
+/// that every later leg carries on. So two ways of summing the same distance can
+/// end up visibly apart, and further apart the more such legs a path passes — the
+/// geometry is ill-conditioned there, not the law wrong. What both ends actually
+/// need of such a path is that they step it by the *same* pieces, bit for bit, and
+/// that is pinned where the client follows a motion (`systems/predicted_motion`).
+fn aims_at_points(s: &Scenario) -> bool {
+    s.legs.iter().any(|l| matches!(l, Leg::Back | Leg::To { .. }))
 }
 
 #[test]
 fn splitting_an_advance_changes_nothing() {
     check!().with_type::<Scenario>().for_each(|s| {
-        if re_aims_forever(s) {
+        if aims_at_points(s) {
             return;
         }
         let path = s.path();

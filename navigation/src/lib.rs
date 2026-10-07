@@ -147,6 +147,20 @@ impl Edge {
     }
 }
 
+/// How far short of a wall a move that meets one comes to rest, world units: a
+/// point exactly on an edge is ambiguous, and a unit standing there has half its
+/// body in the wall.
+const CONTACT_MARGIN: f32 = 0.05;
+
+/// A wall met by a straight move: where the move comes to rest against it, and the
+/// wall's outward normal there — `None` when the move started off the walkable
+/// region and so met no particular wall.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WallHit {
+    pub at: Vec2,
+    pub normal: Option<Vec2>,
+}
+
 /// Where a straight move first leaves the walkable region (stormlight/server#212).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Exit {
@@ -397,6 +411,51 @@ impl NavMesh {
                 })
             })
             .min_by(|a, b| a.fraction.total_cmp(&b.fraction))
+    }
+
+    /// Where the straight move `from → to` comes to rest against the first wall in
+    /// its way, and that wall's normal — or `None` if nothing stops it. The one rule
+    /// every forced move and every motion meets geometry by, on both ends
+    /// (stormlight/server#212, server#216).
+    #[must_use]
+    pub fn wall_hit(&self, from: Vec2, to: Vec2) -> Option<WallHit> {
+        // A unit already standing somewhere invalid has nowhere safe to move from,
+        // so it does not move rather than being flung to an arbitrary rescue point.
+        if !self.contains(from) {
+            return Some(WallHit { at: from, normal: None });
+        }
+        match self.first_exit(from, to) {
+            None if self.contains(to) => None,
+            // Never left through an edge, yet ended off the region: the start sat
+            // within the walkability tolerance but outside the exact outline.
+            // Staying put is the only answer that cannot be inside a wall.
+            None => Some(WallHit { at: from, normal: None }),
+            Some(exit) => Some(WallHit {
+                at: self.park(from, (to - from).normalize_or_zero(), exit),
+                normal: Some(exit.normal),
+            }),
+        }
+    }
+
+    /// Where a move that left the region at `exit` comes to rest: a hair back
+    /// along the move from the contact, so the landing is unambiguously walkable.
+    ///
+    /// Back along the move and nowhere else. Stepping off the wall along its normal
+    /// as well looks safer and breaks the one property a moving body needs: a
+    /// second move along the same line would have to travel `margin / sin(angle)`
+    /// to reach the wall again, so at a grazing angle a motion advanced tick by tick
+    /// would creep along every wall it touched. The body's own size is the region's
+    /// inset, not this margin's job.
+    ///
+    /// The spot must still be reachable in a straight line from the start, or the
+    /// parking itself would cut a corner; a move that met the wall within the
+    /// margin of where it began stays put.
+    fn park(&self, from: Vec2, dir: Vec2, exit: Exit) -> Vec2 {
+        let back = exit.at - dir * CONTACT_MARGIN;
+        let clear = from.distance(exit.at) > CONTACT_MARGIN
+            && self.contains(back)
+            && self.first_exit(from, back).is_none();
+        if clear { back } else { from }
     }
 
     /// Whether a point is inside the walkable region.
