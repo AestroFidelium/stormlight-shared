@@ -6,4 +6,5 @@
 
 mod predicted_corridor;
 mod predicted_intent;
+mod predicted_motion;
 mod predicted_turn;

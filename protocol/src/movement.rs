@@ -54,6 +54,9 @@ pub fn register(app: &mut App) {
     // be driven by the client's own simulation and only reconciled through a
     // rollback — which is the bug rather than the fix.
     app.register_component::<MoveIntent>();
+    // The motion a unit is carried along (stormlight/server#216): a server fact,
+    // replicated plainly so the predicting client can step it — never predicted.
+    app.register_component::<crate::motion::MotionFact>();
 }
 
 // ---------------------------------------------------------------------------
@@ -514,7 +517,7 @@ pub fn predict_movement(
             &mut Transform,
             Option<&mut MovePath>,
         ),
-        With<Predicted>,
+        (With<Predicted>, Without<crate::motion::MotionFact>),
     >,
 ) {
     let dt = time.delta_secs();
@@ -607,8 +610,12 @@ pub fn adopt_move_intent(
 /// one it is allowed to adopt, and only while the mirror agrees it is standing:
 /// pinning it onto a mirror that is walking a leg the authority has not seen yet
 /// would drag the model back to the angle it had before the player clicked.
+#[allow(clippy::type_complexity)] // A Bevy query tuple; idiomatic.
 pub fn adopt_intent_facing(
-    mut movers: Query<(&MoveIntent, Option<&MoveGoal>, &mut Transform), With<Predicted>>,
+    mut movers: Query<
+        (&MoveIntent, Option<&MoveGoal>, &mut Transform),
+        (With<Predicted>, Without<crate::motion::MotionFact>),
+    >,
 ) {
     for (intent, goal, mut transform) in &mut movers {
         let Some(yaw) = intent.facing else { continue };
@@ -663,7 +670,16 @@ impl Plugin for PredictedMovementPlugin {
         // up last, after the walk has had its say about whether the unit moved.
         app.add_systems(
             FixedUpdate,
-            (adopt_move_intent, plan_predicted_paths, predict_movement, adopt_intent_facing)
+            (
+                adopt_move_intent,
+                plan_predicted_paths,
+                // A unit carried along a motion is placed by it, not walked
+                // (stormlight/server#216).
+                crate::motion::forget_ended_motions,
+                crate::motion::follow_motions,
+                predict_movement,
+                adopt_intent_facing,
+            )
                 .chain(),
         );
     }

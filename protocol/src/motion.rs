@@ -34,7 +34,12 @@ use core::f32::consts::PI;
 use core::num::NonZeroU32;
 
 use bevy::prelude::*;
+use lightyear::prelude::{LocalTimeline, Predicted, Tick};
 use serde::{Deserialize, Serialize};
+use stormlight_navigation::{ActiveNavMesh, NavMesh, WallHit};
+
+use crate::connection::tick_duration;
+use crate::movement::yaw_to;
 
 /// The furthest a chord of a curve may stray from the curve, in world units. Below
 /// any contact radius a unit has, so cutting a corner of a curve never decides
@@ -348,5 +353,300 @@ impl Cursor {
             let s = if i == pieces { to } else { from + step * i as f32 };
             trace.push(self.stretch.at(s).0);
         }
+    }
+}
+
+/// What a wall does to a motion, in numbers (stormlight/server#215).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Walls {
+    /// Ends against the first wall.
+    Stop,
+    /// Glances off walls, this many more times; then stops at the next.
+    Bounce(u32),
+    /// Goes through walls.
+    Pass,
+}
+
+/// Why a tick of motion ended it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StepEnd {
+    /// Its path ran out, or its time did.
+    Ran,
+    /// A wall stopped it.
+    Wall,
+}
+
+/// What one tick of a motion came to.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Stepped {
+    /// Walls met this tick: the one that stopped it, and every ricochet.
+    pub collisions: u32,
+    /// Whether, and why, the motion ended this tick.
+    pub ended: Option<StepEnd>,
+    /// The share of the tick it was moving in — less than all of it when it ended
+    /// partway through.
+    pub span: f32,
+}
+
+/// A motion under way: its path and where along it, its pace, its time limit and
+/// what walls do to it (stormlight/server#216).
+///
+/// One tick of it is [`Self::step`], which the authority runs and a predicting
+/// client runs identically, piece for piece: the same per-tick distance, the same
+/// walls, the same ricochets. Recomputing a motion from its total distance instead
+/// is *not* the same — paths that re-aim at fixed points are chaotic in float — so
+/// both ends step it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MotionState {
+    path: MotionPath,
+    cursor: Cursor,
+    speed: f32,
+    limit: Option<f32>,
+    elapsed: f32,
+    walls: Walls,
+}
+
+impl MotionState {
+    /// A motion about to start along `path`.
+    #[must_use]
+    pub fn new(path: MotionPath, speed: f32, limit: Option<f32>, walls: Walls) -> Self {
+        let cursor = Cursor::start(&path);
+        let limit = limit.filter(|l| l.is_finite()).map(|l| l.max(0.0));
+        Self { path, cursor, speed, limit, elapsed: 0.0, walls }
+    }
+
+    /// Where the moving unit is.
+    #[must_use]
+    pub fn position(&self) -> Vec2 {
+        self.cursor.position()
+    }
+
+    /// Which way it is heading.
+    #[must_use]
+    pub fn heading(&self) -> Vec2 {
+        self.cursor.heading()
+    }
+
+    /// What walls do to it now — with the ricochets it has left.
+    #[must_use]
+    pub fn walls(&self) -> Walls {
+        self.walls
+    }
+
+    /// Advance by one tick of `dt` seconds against `navmesh`, appending the ground
+    /// covered to `trace` (cut short at a wall it stops at).
+    ///
+    /// A tick is travelled one pass per wall met: a ricochet rewinds to where the
+    /// cursor came to rest against the wall, reflects it off the wall's normal and
+    /// spends the rest of the tick from there (stormlight/server#215). Each pass
+    /// spends a ricochet, so a tick does bounded work.
+    pub fn step(&mut self, navmesh: Option<&NavMesh>, dt: f32, trace: &mut Vec<Vec2>) -> Stepped {
+        // A time limit cuts the tick's travel to the time that was left.
+        let time = self.limit.map_or(dt, |limit| dt.min((limit - self.elapsed).max(0.0)));
+        self.elapsed += dt;
+        let timed_out = self.limit.is_some_and(|limit| self.elapsed >= limit - f32::EPSILON);
+        let first = trace.len();
+        let mut collisions = 0;
+        let mut ended = None;
+        let mut left = self.speed * time;
+        let mut piece = Vec::new();
+        loop {
+            let before = self.cursor;
+            piece.clear();
+            self.cursor.advance(&self.path, left, &mut piece);
+            let hit = match (navmesh, self.walls) {
+                (Some(map), Walls::Stop | Walls::Bounce(_)) => first_wall(map, &piece),
+                _ => None,
+            };
+            let Some((along, wall)) = hit else {
+                extend(trace, &piece);
+                break;
+            };
+            collisions += 1;
+            match (self.walls, wall.normal) {
+                (Walls::Bounce(remaining), Some(normal)) if remaining > 0 => {
+                    self.walls = Walls::Bounce(remaining - 1);
+                    // Back to where the wall was met, then off it.
+                    self.cursor = before;
+                    piece.clear();
+                    self.cursor.advance(&self.path, along, &mut piece);
+                    extend(trace, &piece);
+                    self.cursor.reflect(&self.path, normal);
+                    left -= along;
+                    if left <= 0.0 || self.cursor.finished() {
+                        break;
+                    }
+                }
+                _ => {
+                    // Keep the ground covered up to the wall, so what stood before
+                    // it is met.
+                    let reached = piece.len().min(segment_of(&piece, along) + 1);
+                    piece.truncate(reached);
+                    piece.push(wall.at);
+                    extend(trace, &piece);
+                    ended = Some(StepEnd::Wall);
+                    break;
+                }
+            }
+        }
+        if ended.is_none() && (self.cursor.finished() || timed_out) {
+            ended = Some(StepEnd::Ran);
+        }
+        let covered: f32 =
+            trace.get(first..).unwrap_or_default().windows(2).map(|w| w[0].distance(w[1])).sum();
+        let pace = self.speed * dt;
+        let span = if pace > 0.0 { (covered / pace).clamp(0.0, 1.0) } else { 1.0 };
+        Stepped { collisions, ended, span }
+    }
+}
+
+/// The first wall `piece` runs into, and how far along it the move comes to rest
+/// against it.
+fn first_wall(map: &NavMesh, piece: &[Vec2]) -> Option<(f32, WallHit)> {
+    let mut covered = 0.0;
+    for w in piece.windows(2) {
+        let (from, to) = (w[0], w[1]);
+        if let Some(hit) = map.wall_hit(from, to) {
+            return Some((covered + from.distance(hit.at), hit));
+        }
+        covered += from.distance(to);
+    }
+    None
+}
+
+/// Which segment of `piece` the point `along` it falls in.
+fn segment_of(piece: &[Vec2], along: f32) -> usize {
+    let mut covered = 0.0;
+    for (i, w) in piece.windows(2).enumerate() {
+        covered += w[0].distance(w[1]);
+        if along <= covered {
+            return i;
+        }
+    }
+    piece.len().saturating_sub(2)
+}
+
+/// Append `piece` to `trace`, without repeating the point they share.
+fn extend(trace: &mut Vec<Vec2>, piece: &[Vec2]) {
+    let skip = usize::from(trace.last().is_some() && trace.last() == piece.first());
+    trace.extend(piece.iter().skip(skip));
+}
+
+/// A motion under way, as the server publishes it (stormlight/server#216): enough
+/// for a predicting client to step it exactly as the authority does — the path,
+/// the pace, the time limit, the walls, and the tick it started on.
+///
+/// Replicated plainly, never predicted: it is a fact the server decides, and its
+/// removal (the motion ended or was cut off) reaches the client as an ordinary
+/// update.
+#[derive(Component, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MotionFact {
+    pub path: MotionPath,
+    pub speed: f32,
+    pub limit: Option<f32>,
+    pub walls: Walls,
+    /// The tick the motion began on; it is first stepped the tick after.
+    pub started: Tick,
+}
+
+impl MotionFact {
+    /// The motion as it stood when it began.
+    #[must_use]
+    pub fn state(&self) -> MotionState {
+        MotionState::new(self.path.clone(), self.speed, self.limit, self.walls)
+    }
+}
+
+/// How far a predicting client has stepped the motion it follows — a cache, so a
+/// tick costs one step rather than a replay from the start.
+#[derive(Component, Clone, Debug)]
+pub struct FollowedMotion {
+    fact: MotionFact,
+    state: MotionState,
+    steps: u32,
+    /// Where the unit rests: the end of its last tick's travel, which is short of
+    /// the cursor when a wall stopped it.
+    rest: Vec2,
+    ended: bool,
+}
+
+impl FollowedMotion {
+    fn new(fact: &MotionFact) -> Self {
+        let state = fact.state();
+        let rest = fact.path.start;
+        Self { fact: fact.clone(), state, steps: 0, rest, ended: false }
+    }
+
+    /// Step up to `steps` ticks in, by the authority's own pieces.
+    fn catch_up(&mut self, steps: u32, navmesh: Option<&NavMesh>, trace: &mut Vec<Vec2>) {
+        let dt = tick_duration().as_secs_f32();
+        while self.steps < steps && !self.ended {
+            trace.clear();
+            let stepped = self.state.step(navmesh, dt, trace);
+            if let Some(last) = trace.last() {
+                self.rest = *last;
+            }
+            self.ended = stepped.ended.is_some();
+            self.steps += 1;
+        }
+    }
+}
+
+/// The most ticks a client will step a motion to catch up in one go. A fact that
+/// claims to be older than this is a clock out of step, not a motion to replay —
+/// a minute of play, far past any motion's natural length.
+const MAX_CATCH_UP: u32 = 64 * 60;
+
+/// **Prediction**: put every predicted unit carrying a motion where the motion has
+/// it on this tick (stormlight/server#216) — stepped from the published fact by
+/// the same law and the same per-tick pieces the authority uses.
+///
+/// A rollback re-runs earlier ticks; the cache is ahead of them then, so the motion
+/// is replayed from its start up to the earlier tick.
+pub fn follow_motions(
+    // Optional: an app with no timeline has no ticks to follow a motion by.
+    timeline: Option<Res<LocalTimeline>>,
+    navmesh: Option<Res<ActiveNavMesh>>,
+    mut commands: Commands,
+    mut movers: Query<
+        (Entity, &MotionFact, Option<&mut FollowedMotion>, &mut Transform),
+        With<Predicted>,
+    >,
+) {
+    let Some(timeline) = timeline else { return };
+    let mut trace = Vec::new();
+    for (entity, fact, followed, mut transform) in &mut movers {
+        let elapsed = timeline.tick() - fact.started;
+        let steps = u32::try_from(elapsed).unwrap_or(0).min(MAX_CATCH_UP);
+        let map = navmesh.as_deref().map(|m| &m.0);
+        match followed {
+            Some(mut followed) if followed.fact == *fact && followed.steps <= steps => {
+                followed.catch_up(steps, map, &mut trace);
+                place(&followed, &mut transform);
+            }
+            _ => {
+                let mut fresh = FollowedMotion::new(fact);
+                fresh.catch_up(steps, map, &mut trace);
+                place(&fresh, &mut transform);
+                commands.entity(entity).insert(fresh);
+            }
+        }
+    }
+}
+
+/// Put the unit where the motion it follows has it.
+fn place(follow: &FollowedMotion, transform: &mut Transform) {
+    transform.translation.x = follow.rest.x;
+    transform.translation.z = follow.rest.y;
+    transform.rotation = Quat::from_rotation_y(yaw_to(follow.state.heading()));
+}
+
+/// Forget the cache of a motion whose fact is gone.
+pub fn forget_ended_motions(
+    mut commands: Commands,
+    stale: Query<Entity, (With<FollowedMotion>, Without<MotionFact>)>,
+) {
+    for entity in &stale {
+        commands.entity(entity).remove::<FollowedMotion>();
     }
 }
