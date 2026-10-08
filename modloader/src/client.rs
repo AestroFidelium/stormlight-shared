@@ -20,6 +20,7 @@ use std::path::Path;
 use anyhow::{Result, anyhow, bail};
 use stormlight_mod_abi::abilities::{Cost, Targeting};
 use stormlight_mod_abi::animation::{AnimState, AnimationDescriptor};
+use stormlight_mod_abi::attach::AttachPoint;
 use stormlight_mod_abi::descriptors::Names;
 use stormlight_mod_abi::environment::Environment;
 use stormlight_mod_abi::ids::{AbilityId, Handle, ResourceId, TalentId, UnitId};
@@ -48,6 +49,10 @@ use crate::vfs::{ModSource, Vfs};
 pub struct AdoptedVisuals {
     by_name: BTreeMap<String, VisualModel>,
     by_effect: BTreeMap<(String, EffectRole), VisualModel>,
+    /// Where on its unit's rig each effect visual asked to be hung
+    /// (stormlight/server#160), under the same `(ability name, role)` key as the
+    /// visual — only for the visuals that asked.
+    by_effect_attach: BTreeMap<(String, EffectRole), AttachPoint>,
     /// The icon each ability wears in an interface (server#94), keyed by the same
     /// ability **name** its feedback visuals are keyed by. A picture rather than a
     /// [`VisualModel`]: an icon is a flat asset in a widget.
@@ -166,6 +171,7 @@ impl AdoptedVisuals {
             by_name.insert(name.clone(), v.model.clone());
         }
         let mut by_effect = BTreeMap::new();
+        let mut by_effect_attach = BTreeMap::new();
         for e in &reg.effects {
             let name = reg.names.abilities.get(e.ability.0 as usize).ok_or_else(|| {
                 anyhow!(
@@ -174,6 +180,12 @@ impl AdoptedVisuals {
                 )
             })?;
             by_effect.insert((name.clone(), e.role), e.model.clone());
+            // Replaced or cleared with the visual, so a later declaration of the
+            // same key never inherits an earlier one's point.
+            match &e.attach {
+                Some(point) => by_effect_attach.insert((name.clone(), e.role), point.clone()),
+                None => by_effect_attach.remove(&(name.clone(), e.role)),
+            };
         }
         let mut by_icon = BTreeMap::new();
         for icon in &reg.icons {
@@ -273,6 +285,7 @@ impl AdoptedVisuals {
         Ok(Self {
             by_name,
             by_effect,
+            by_effect_attach,
             by_icon,
             by_unit_icon,
             by_card,
@@ -295,6 +308,13 @@ impl AdoptedVisuals {
     #[must_use]
     pub fn effect(&self, ability_name: &str, role: EffectRole) -> Option<&VisualModel> {
         self.by_effect.get(&(ability_name.to_string(), role))
+    }
+
+    /// Where the feedback visual for `ability_name` in `role` asked to be hung on
+    /// its unit's rig (stormlight/server#160), if it asked.
+    #[must_use]
+    pub fn effect_attach(&self, ability_name: &str, role: EffectRole) -> Option<&AttachPoint> {
+        self.by_effect_attach.get(&(ability_name.to_string(), role))
     }
 
     /// The icon declared for `ability_name`, if any — the picture an interface
@@ -414,6 +434,12 @@ impl AdoptedVisuals {
     pub fn effects(&self) -> impl Iterator<Item = (&(String, EffectRole), &VisualModel)> {
         self.by_effect.iter()
     }
+
+    /// Iterate the `((ability name, role), point)` pairs of the visuals that asked
+    /// to hang on a point, in key order.
+    pub fn effect_attaches(&self) -> impl Iterator<Item = (&(String, EffectRole), &AttachPoint)> {
+        self.by_effect_attach.iter()
+    }
 }
 
 /// The client-side host: loads cosmetic mods, runs each guest's registration,
@@ -424,6 +450,9 @@ pub struct ClientHost {
     vfs: Vfs,
     visuals: BTreeMap<String, VisualModel>,
     effects: BTreeMap<(String, EffectRole), VisualModel>,
+    /// Where each effect visual asked to hang on its unit's rig (server#160),
+    /// merged across mods under the visual's own key.
+    effect_attach: BTreeMap<(String, EffectRole), AttachPoint>,
     /// Each ability's interface icon, keyed by ability name until
     /// [`icons_by_id`](ClientHost::icons_by_id) crosses the same name→global-id
     /// bridge the visuals cross (server#94).
@@ -535,6 +564,7 @@ impl ClientHost {
             vfs: Vfs::new(),
             visuals: BTreeMap::new(),
             effects: BTreeMap::new(),
+            effect_attach: BTreeMap::new(),
             icons: BTreeMap::new(),
             unit_icons: BTreeMap::new(),
             cards: BTreeMap::new(),
@@ -858,6 +888,17 @@ impl ClientHost {
             .filter_map(|((name, role), model)| Some(((self.ability_ids.get(name)?, *role), model)))
     }
 
+    /// Where each adopted effect visual asked to hang on its unit's rig
+    /// (stormlight/server#160), keyed exactly as [`effects_by_id`](Self::effects_by_id)
+    /// keys the visuals — and skipped for the same abilities.
+    pub fn effect_attach_by_id(
+        &self,
+    ) -> impl Iterator<Item = ((AbilityId, EffectRole), &AttachPoint)> {
+        self.effect_attach
+            .iter()
+            .filter_map(|((name, role), point)| Some(((self.ability_ids.get(name)?, *role), point)))
+    }
+
     /// Every adopted ability icon keyed by the **global `AbilityId`** the wire
     /// carries, the picture an interface draws for whichever slot binds that
     /// ability (server#94). An icon for an ability no loaded gameplay mod defines
@@ -922,6 +963,11 @@ impl ClientHost {
         }
         for (key, model) in adopted.effects() {
             self.effects.insert(key.clone(), model.clone());
+            // A later mod's visual replaces the earlier one whole, point and all.
+            match adopted.effect_attach(&key.0, key.1) {
+                Some(point) => self.effect_attach.insert(key.clone(), point.clone()),
+                None => self.effect_attach.remove(key),
+            };
         }
         for (ability, image) in adopted.icons() {
             self.icons.insert(ability.clone(), image.clone());

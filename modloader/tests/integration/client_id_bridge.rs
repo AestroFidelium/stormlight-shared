@@ -104,6 +104,7 @@ fn cosmetic(unit_name: &str, ability_name: &str) -> Vec<u8> {
             ability: AbilityId(0),
             role: EffectRole::Projectile,
             model: model(0.9),
+            attach: None,
         }],
         icons: vec![AbilityIcon { ability: AbilityId(0), image: ICON.into() }],
         ..ClientRegistration::default()
