@@ -20,6 +20,8 @@ use bevy::prelude::*;
 use lightyear::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::time_scale::TimeScale;
+
 /// World position of a projectile `elapsed` seconds after launch: straight-line
 /// travel from `origin` along `velocity` (world units/second). Negative
 /// `elapsed` clamps to the launch instant — a shot never flies backwards in
@@ -173,6 +175,28 @@ impl MapEntities for ProjectileFired {
     }
 }
 
+/// A shot's pace changed (stormlight/server#224): it flew into a time field, out
+/// of one, or the field it was in came or went.
+///
+/// A missile is never streamed — the client reconstructs its flight from the
+/// launch alone — so a shot that hangs in stopped time on the server would keep
+/// flying on every screen. This is the one fact the reconstruction needs to keep
+/// up: from now on the shot's flight time runs at `pace`, and it stands at
+/// `elapsed` seconds of it. Carrying the elapsed time rather than a position lets
+/// the drawing re-align to the server exactly, whatever its own clock drifted.
+///
+/// Rides the same channel as the launch, which does not order the two: a pace
+/// can arrive before the launch it is about, and the receiver keeps it until then.
+#[derive(Event, Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ProjectilePaced {
+    /// The shot, as its launch named it.
+    pub shot: u32,
+    /// How fast its flight time runs from now on.
+    pub pace: TimeScale,
+    /// Seconds of flight time it has run so far, by the server's count.
+    pub elapsed: f32,
+}
+
 /// Reliable channel the one-shot launch events ride. Reliable (not per-tick) so a
 /// launch is delivered exactly once and never dropped — a missed shot would leave
 /// a client with no visual for a real projectile. One small message per shot is
@@ -196,4 +220,6 @@ pub fn register(app: &mut App) {
         // receiver's own world (stormlight/server#154).
         .add_map_entities()
         .add_direction(NetworkDirection::ServerToClient);
+    // A shot's pace changing (stormlight/server#224): plain values, nothing to map.
+    app.register_event::<ProjectilePaced>().add_direction(NetworkDirection::ServerToClient);
 }

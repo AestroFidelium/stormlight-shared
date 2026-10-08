@@ -70,6 +70,13 @@ impl Plugin for ProtocolPlugin {
         // live unit as live.
         crate::death::register(app);
 
+        // How fast a unit's time runs (stormlight/server#224), so a client draws
+        // it at that pace.
+        crate::time_scale::register(app);
+        // …and when it changed, by tick (stormlight/server#225), so a predicting
+        // client re-steps every tick at the pace that tick ran at.
+        crate::pace_log::register(app);
+
         // What is waiting to land on a unit in stopped time
         // (stormlight/server#223), so a client can draw blows piling up on it.
         crate::held::register(app);

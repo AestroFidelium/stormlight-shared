@@ -17,6 +17,9 @@ use lightyear::prelude::*;
 use serde::{Deserialize, Serialize};
 use stormlight_navigation::ActiveNavMesh;
 
+use crate::pace_log::PaceLog;
+use crate::time_scale::TimeScale;
+
 /// Register the mover's replicated stats. Called from
 /// [`ProtocolPlugin`](crate::protocol::ProtocolPlugin) so server and client agree
 /// byte-for-byte.
@@ -506,6 +509,10 @@ pub fn yaw_of(transform: &Transform) -> f32 {
 #[allow(clippy::type_complexity)]
 pub fn predict_movement(
     time: Res<Time>,
+    // The tick being stepped — a rollback re-steps earlier ones — and what pace it
+    // ran at (stormlight/server#225). Optional: an app with no timeline steps at
+    // the world's pace.
+    timeline: Option<Res<LocalTimeline>>,
     mut commands: Commands,
     mut q: Query<
         (
@@ -516,12 +523,15 @@ pub fn predict_movement(
             Option<&TurnRate>,
             &mut Transform,
             Option<&mut MovePath>,
+            Option<&PaceLog>,
         ),
         (With<Predicted>, Without<crate::motion::MotionFact>),
     >,
 ) {
-    let dt = time.delta_secs();
-    for (entity, goal, intent, base, turn, mut transform, mut path) in &mut q {
+    let tick = timeline.map(|t| t.tick());
+    for (entity, goal, intent, base, turn, mut transform, mut path, log) in &mut q {
+        let pace = log.zip(tick).map_or(TimeScale::NORMAL, |(log, tick)| log.pace_at(tick));
+        let dt = pace.apply(time.delta_secs());
         let pos = Vec2::new(transform.translation.x, transform.translation.z);
         let cur_yaw = yaw_of(&transform);
         let turn_rate = turn_rate_of(turn);
