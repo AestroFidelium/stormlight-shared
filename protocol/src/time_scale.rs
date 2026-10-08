@@ -20,7 +20,8 @@
 //! a stop does: two very slow sources never round down into one, because a stopped
 //! target is a categorically different thing (every hit aimed at it is held).
 
-use bevy::prelude::Component;
+use bevy::prelude::{App, Component};
+use lightyear::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// Thousandths in one whole factor.
@@ -146,4 +147,16 @@ impl Default for TimeScale {
     fn default() -> Self {
         Self::NORMAL
     }
+}
+
+/// Register a unit's pace for replication on both ends (stormlight/server#224), so
+/// a client draws the unit at the pace it lives at: its animations, and whatever
+/// it renders attached to it.
+///
+/// Interpolated with the confirmed value — a pace has no in-between worth easing
+/// through — and **not predicted**: the pace is the server's to derive from fields
+/// the client does not simulate, and a predicted copy would only ever be corrected
+/// by a rollback. Unpredicted, every update lands on the owner's own unit too.
+pub fn register(app: &mut App) {
+    app.register_component::<TimeScale>().add_interpolation_with(|_start, end, _t| end);
 }

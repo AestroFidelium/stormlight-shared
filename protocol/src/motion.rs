@@ -40,6 +40,8 @@ use stormlight_navigation::{ActiveNavMesh, NavMesh, WallHit};
 
 use crate::connection::tick_duration;
 use crate::movement::yaw_to;
+use crate::pace_log::PaceLog;
+use crate::time_scale::TimeScale;
 
 /// The furthest a chord of a curve may stray from the curve, in world units. Below
 /// any contact radius a unit has, so cutting a corner of a curve never decides
@@ -562,6 +564,9 @@ impl MotionFact {
 #[derive(Component, Clone, Debug)]
 pub struct FollowedMotion {
     fact: MotionFact,
+    /// The pace record it was stepped by. A change to it — a stop the server saw
+    /// after this client had already stepped past it — is a replay from the start.
+    log: Option<PaceLog>,
     state: MotionState,
     steps: u32,
     /// Where the unit rests: the end of its last tick's travel, which is short of
@@ -571,23 +576,36 @@ pub struct FollowedMotion {
 }
 
 impl FollowedMotion {
-    fn new(fact: &MotionFact) -> Self {
+    fn new(fact: &MotionFact, log: Option<&PaceLog>) -> Self {
         let state = fact.state();
         let rest = fact.path.start;
-        Self { fact: fact.clone(), state, steps: 0, rest, ended: false }
+        Self { fact: fact.clone(), log: log.cloned(), state, steps: 0, rest, ended: false }
     }
 
-    /// Step up to `steps` ticks in, by the authority's own pieces.
-    fn catch_up(&mut self, steps: u32, navmesh: Option<&NavMesh>, trace: &mut Vec<Vec2>) {
-        let dt = tick_duration().as_secs_f32();
+    /// Step up to `steps` ticks in, by the authority's own pieces — each tick at
+    /// the pace `log` says it ran at (stormlight/server#225), and a stopped tick
+    /// not at all, as the authority skips it.
+    fn catch_up(
+        &mut self,
+        steps: u32,
+        log: Option<&PaceLog>,
+        navmesh: Option<&NavMesh>,
+        trace: &mut Vec<Vec2>,
+    ) {
         while self.steps < steps && !self.ended {
+            self.steps += 1;
+            let tick = self.fact.started + i16::try_from(self.steps).unwrap_or(i16::MAX);
+            let pace = log.map_or(TimeScale::NORMAL, |log| log.pace_at(tick));
+            let dt = pace.apply(tick_duration().as_secs_f32());
+            if dt <= 0.0 {
+                continue;
+            }
             trace.clear();
             let stepped = self.state.step(navmesh, dt, trace);
             if let Some(last) = trace.last() {
                 self.rest = *last;
             }
             self.ended = stepped.ended.is_some();
-            self.steps += 1;
         }
     }
 }
@@ -597,36 +615,48 @@ impl FollowedMotion {
 /// a minute of play, far past any motion's natural length.
 const MAX_CATCH_UP: u32 = 64 * 60;
 
+/// A predicted unit carrying a motion: the fact, how far it has been followed, its
+/// place, and the record of the pace each tick ran at (stormlight/server#225).
+type Follower<'a> = (
+    Entity,
+    &'a MotionFact,
+    Option<&'a mut FollowedMotion>,
+    &'a mut Transform,
+    Option<&'a PaceLog>,
+);
+
 /// **Prediction**: put every predicted unit carrying a motion where the motion has
 /// it on this tick (stormlight/server#216) — stepped from the published fact by
 /// the same law and the same per-tick pieces the authority uses.
 ///
 /// A rollback re-runs earlier ticks; the cache is ahead of them then, so the motion
-/// is replayed from its start up to the earlier tick.
+/// is replayed from its start up to the earlier tick. Every tick is stepped at the
+/// pace it ran at, so a motion through a time field is followed exactly too.
 pub fn follow_motions(
     // Optional: an app with no timeline has no ticks to follow a motion by.
     timeline: Option<Res<LocalTimeline>>,
     navmesh: Option<Res<ActiveNavMesh>>,
     mut commands: Commands,
-    mut movers: Query<
-        (Entity, &MotionFact, Option<&mut FollowedMotion>, &mut Transform),
-        With<Predicted>,
-    >,
+    mut movers: Query<Follower, With<Predicted>>,
 ) {
     let Some(timeline) = timeline else { return };
     let mut trace = Vec::new();
-    for (entity, fact, followed, mut transform) in &mut movers {
+    for (entity, fact, followed, mut transform, log) in &mut movers {
         let elapsed = timeline.tick() - fact.started;
         let steps = u32::try_from(elapsed).unwrap_or(0).min(MAX_CATCH_UP);
         let map = navmesh.as_deref().map(|m| &m.0);
         match followed {
-            Some(mut followed) if followed.fact == *fact && followed.steps <= steps => {
-                followed.catch_up(steps, map, &mut trace);
+            Some(mut followed)
+                if followed.fact == *fact
+                    && followed.log.as_ref() == log
+                    && followed.steps <= steps =>
+            {
+                followed.catch_up(steps, log, map, &mut trace);
                 place(&followed, &mut transform);
             }
             _ => {
-                let mut fresh = FollowedMotion::new(fact);
-                fresh.catch_up(steps, map, &mut trace);
+                let mut fresh = FollowedMotion::new(fact, log);
+                fresh.catch_up(steps, log, map, &mut trace);
                 place(&fresh, &mut transform);
                 commands.entity(entity).insert(fresh);
             }

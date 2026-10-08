@@ -16,6 +16,7 @@ mod motion_reflect;
 mod move_intent;
 mod mover;
 mod orders;
+mod pace_log;
 mod pools;
 mod progression;
 mod projectile;
