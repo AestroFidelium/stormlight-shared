@@ -6,6 +6,7 @@
 //! [`prelude`].
 
 pub mod balance;
+pub mod bodies;
 pub mod cast;
 pub mod connection;
 pub mod death;
