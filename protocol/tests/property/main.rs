@@ -5,6 +5,7 @@
 //! Keep invariants directional/structural, never magnitude-only.
 
 mod arrival_tick;
+mod body_fact;
 mod cast_intent;
 mod cast_progress;
 mod death;

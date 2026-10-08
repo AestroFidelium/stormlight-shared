@@ -81,6 +81,11 @@ impl Plugin for ProtocolPlugin {
         // (stormlight/server#223), so a client can draw blows piling up on it.
         crate::held::register(app);
 
+        // Bodies an ability leaves standing in the world (stormlight/server#220): a
+        // zone, an item on the ground, a summon. Replicated entities rather than
+        // events, because they stay; the fact says which kind and whose art.
+        crate::bodies::register(app);
+
         // Event-driven projectiles (stormlight/server#9): the one-shot launch
         // event + its reliable channel. Server emits, client simulates locally —
         // no per-tick Transform on the wire for a projectile.
