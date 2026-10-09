@@ -29,6 +29,7 @@ mod slots;
 mod stacks;
 mod swing_progress;
 mod talent_pick;
+mod time_field;
 mod time_scale;
 mod turn_rate;
 mod ui_trigger;

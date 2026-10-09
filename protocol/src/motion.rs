@@ -41,7 +41,7 @@ use stormlight_navigation::{ActiveNavMesh, NavMesh, WallHit};
 use crate::connection::tick_duration;
 use crate::movement::yaw_to;
 use crate::pace_log::PaceLog;
-use crate::time_scale::TimeScale;
+use crate::time_field::{KnownFields, PaceTerms, predicted_pace};
 
 /// The furthest a chord of a curve may stray from the curve, in world units. Below
 /// any contact radius a unit has, so cutting a corner of a curve never decides
@@ -270,6 +270,13 @@ impl Cursor {
                 return;
             }
             *steps += 1;
+            // A finished leg hands the next one its exact end. The cursor stops
+            // within `LEG_EPS` of it by however the distance happened to be split,
+            // and entering from there tilts the next leg by the curvature times that
+            // shortfall — nothing on one corner, a visible drift over hundreds of
+            // rounds of an endless curve, and different on the two ends of the wire
+            // if they split the same distance differently.
+            self.into = self.stretch.length;
             self.leg += 1;
             if self.leg >= path.legs.len() {
                 self.leg = 0;
@@ -567,6 +574,10 @@ pub struct FollowedMotion {
     /// The pace record it was stepped by. A change to it — a stop the server saw
     /// after this client had already stepped past it — is a replay from the start.
     log: Option<PaceLog>,
+    /// The terms and the field knowledge it was stepped by (stormlight/server#232),
+    /// for the same reason: a field learnt late changes ticks already stepped.
+    terms: Option<PaceTerms>,
+    fields: u64,
     state: MotionState,
     steps: u32,
     /// Where the unit rests: the end of its last tick's travel, which is short of
@@ -576,10 +587,26 @@ pub struct FollowedMotion {
 }
 
 impl FollowedMotion {
-    fn new(fact: &MotionFact, log: Option<&PaceLog>) -> Self {
+    fn new(fact: &MotionFact, pace: &PaceInputs) -> Self {
         let state = fact.state();
         let rest = fact.path.start;
-        Self { fact: fact.clone(), log: log.cloned(), state, steps: 0, rest, ended: false }
+        Self {
+            fact: fact.clone(),
+            log: pace.log.cloned(),
+            terms: pace.terms.cloned(),
+            fields: pace.known.map_or(0, KnownFields::generation),
+            state,
+            steps: 0,
+            rest,
+            ended: false,
+        }
+    }
+
+    /// Whether this cache was stepped by exactly these pace inputs.
+    fn stepped_by(&self, pace: &PaceInputs) -> bool {
+        self.log.as_ref() == pace.log
+            && self.terms.as_ref() == pace.terms
+            && self.fields == pace.known.map_or(0, KnownFields::generation)
     }
 
     /// Step up to `steps` ticks in, by the authority's own pieces — each tick at
@@ -588,14 +615,16 @@ impl FollowedMotion {
     fn catch_up(
         &mut self,
         steps: u32,
-        log: Option<&PaceLog>,
+        pace: &PaceInputs,
         navmesh: Option<&NavMesh>,
         trace: &mut Vec<Vec2>,
     ) {
         while self.steps < steps && !self.ended {
             self.steps += 1;
             let tick = self.fact.started + i16::try_from(self.steps).unwrap_or(i16::MAX);
-            let pace = log.map_or(TimeScale::NORMAL, |log| log.pace_at(tick));
+            // From where the unit rests as the tick starts, as the server derives it
+            // (stormlight/server#232).
+            let pace = predicted_pace(pace.terms, pace.known, pace.log, self.rest, tick);
             let dt = pace.apply(tick_duration().as_secs_f32());
             if dt <= 0.0 {
                 continue;
@@ -608,6 +637,13 @@ impl FollowedMotion {
             self.ended = stepped.ended.is_some();
         }
     }
+}
+
+/// Everything a motion's pace can be read from on a predicting client.
+struct PaceInputs<'a> {
+    log: Option<&'a PaceLog>,
+    terms: Option<&'a PaceTerms>,
+    known: Option<&'a KnownFields>,
 }
 
 /// The most ticks a client will step a motion to catch up in one go. A fact that
@@ -636,27 +672,31 @@ pub fn follow_motions(
     // Optional: an app with no timeline has no ticks to follow a motion by.
     timeline: Option<Res<LocalTimeline>>,
     navmesh: Option<Res<ActiveNavMesh>>,
+    known: Option<Res<KnownFields>>,
+    terms: Query<&PaceTerms>,
     mut commands: Commands,
     mut movers: Query<Follower, With<Predicted>>,
 ) {
     let Some(timeline) = timeline else { return };
     let mut trace = Vec::new();
+    let terms = terms.iter().next();
     for (entity, fact, followed, mut transform, log) in &mut movers {
+        let pace = PaceInputs { log, terms, known: known.as_deref() };
         let elapsed = timeline.tick() - fact.started;
         let steps = u32::try_from(elapsed).unwrap_or(0).min(MAX_CATCH_UP);
         let map = navmesh.as_deref().map(|m| &m.0);
         match followed {
             Some(mut followed)
                 if followed.fact == *fact
-                    && followed.log.as_ref() == log
+                    && followed.stepped_by(&pace)
                     && followed.steps <= steps =>
             {
-                followed.catch_up(steps, log, map, &mut trace);
+                followed.catch_up(steps, &pace, map, &mut trace);
                 place(&followed, &mut transform);
             }
             _ => {
-                let mut fresh = FollowedMotion::new(fact, log);
-                fresh.catch_up(steps, log, map, &mut trace);
+                let mut fresh = FollowedMotion::new(fact, &pace);
+                fresh.catch_up(steps, &pace, map, &mut trace);
                 place(&fresh, &mut transform);
                 commands.entity(entity).insert(fresh);
             }
