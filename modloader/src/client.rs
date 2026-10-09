@@ -181,12 +181,10 @@ impl AdoptedVisuals {
             let name = reg.names.units.get(v.unit.0 as usize).ok_or_else(|| {
                 anyhow!("visual references unit handle {} with no name-table entry", v.unit.0)
             })?;
-            // A shadow no renderer can draw is refused here, naming the unit, for
-            // the reason scenery placements are (server#179).
-            if let VisualModel::Model { shadow, .. } = &v.model
-                && !shadow.is_valid()
-            {
-                bail!("unit visual `{name}`: a shadow radius no renderer can draw");
+            // A model no renderer can draw is refused here, naming the unit, for the
+            // reason scenery placements are (server#179, server#170).
+            if !v.model.is_drawable() {
+                bail!("unit visual `{name}`: a shadow or decal no renderer can draw");
             }
             by_name.insert(name.clone(), v.model.clone());
         }
@@ -204,6 +202,12 @@ impl AdoptedVisuals {
             // it appears is never seen, and one that never retires is a leak per hit.
             if !e.lifetime.is_runnable() {
                 bail!("effect visual `{name}` {:?}: a lifetime no clock can run", e.role);
+            }
+            if !e.model.is_drawable() {
+                bail!(
+                    "effect visual `{name}` {:?}: a shadow or decal no renderer can draw",
+                    e.role
+                );
             }
             by_effect.insert((name.clone(), e.role), e.model.clone());
             by_effect_lifetime.insert((name.clone(), e.role), e.lifetime);
@@ -236,6 +240,13 @@ impl AdoptedVisuals {
             // renderer would honour by drawing nothing, forever, and saying nothing.
             if !status.look.shows_anything() {
                 bail!("status visual `{name}` shows nothing to anyone");
+            }
+            let undrawable = [&status.look.own, &status.look.others]
+                .into_iter()
+                .flatten()
+                .any(|model| !model.is_drawable());
+            if undrawable {
+                bail!("status visual `{name}`: a shadow or decal no renderer can draw");
             }
             by_status.insert(name.clone(), status.look.clone());
         }
@@ -299,6 +310,9 @@ impl AdoptedVisuals {
         for e in &reg.named_effects {
             if !e.lifetime.is_runnable() {
                 bail!("notify effect `{}`: a lifetime no clock can run", e.name);
+            }
+            if !e.model.is_drawable() {
+                bail!("notify effect `{}`: a shadow or decal no renderer can draw", e.name);
             }
             let key = qualify(mod_id, &e.name);
             by_notify_key.insert(key.clone(), NamedEffect { name: key, ..e.clone() });
