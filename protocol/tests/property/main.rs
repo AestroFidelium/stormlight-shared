@@ -30,6 +30,7 @@ mod stacks;
 mod statuses;
 mod swing_progress;
 mod talent_pick;
+mod task_payout;
 mod task_window;
 mod time_field;
 mod time_scale;
