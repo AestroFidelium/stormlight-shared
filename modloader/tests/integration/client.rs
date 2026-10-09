@@ -12,6 +12,7 @@ use std::io::{Cursor, Write};
 use stormlight_mod_abi::descriptors::Names;
 use stormlight_mod_abi::ids::UnitId;
 use stormlight_mod_abi::manifest::ABI_VERSION;
+use stormlight_mod_abi::shadow::ModelShadow;
 use stormlight_mod_abi::visuals::{ClientRegistration, ModelClips, VisualDescriptor, VisualModel};
 use stormlight_modloader::client::ClientHost;
 use zip::write::SimpleFileOptions;
@@ -34,6 +35,8 @@ fn sample() -> ClientRegistration {
                 // Integer-valued so equality is exact after decode.
                 scale: 2.0,
                 yaw_offset: 0.0,
+                // A declared radius, so the round trip carries the shadow too (server#179).
+                shadow: ModelShadow::Radius(0.5),
                 launch: Some("launch_point".into()),
                 impact: Some("hit_point".into()),
                 // Named on both sides so the round trip carries the cycle a piece

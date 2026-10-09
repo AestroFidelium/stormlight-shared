@@ -15,5 +15,6 @@ mod client_environment_adopt;
 mod client_icon_adopt;
 mod client_notify_adopt;
 mod client_scenery_adopt;
+mod client_shadow_adopt;
 mod client_status_adopt;
 mod client_ui_adopt;
