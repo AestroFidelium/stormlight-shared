@@ -270,6 +270,13 @@ impl Cursor {
                 return;
             }
             *steps += 1;
+            // A finished leg hands the next one its exact end. The cursor stops
+            // within `LEG_EPS` of it by however the distance happened to be split,
+            // and entering from there tilts the next leg by the curvature times that
+            // shortfall — nothing on one corner, a visible drift over hundreds of
+            // rounds of an endless curve, and different on the two ends of the wire
+            // if they split the same distance differently.
+            self.into = self.stretch.length;
             self.leg += 1;
             if self.leg >= path.legs.len() {
                 self.leg = 0;
