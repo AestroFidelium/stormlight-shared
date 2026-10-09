@@ -37,6 +37,7 @@ fn build(s: &Scenario) -> ClientRegistration {
             shadow: None,
             exposure: f32::from(s.exposure) / 32.0,
             backdrop: [0.0; 3],
+            bloom: None,
         }),
         ..ClientRegistration::default()
     }
