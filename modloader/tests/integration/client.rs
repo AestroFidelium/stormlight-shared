@@ -38,7 +38,7 @@ fn sample() -> ClientRegistration {
                 impact: Some("hit_point".into()),
                 // Named on both sides so the round trip carries the cycle a piece
                 // of art plays on its own, not just its sockets.
-                clips: ModelClips { birth: "Birth".into(), live: "Stand".into() },
+                clips: ModelClips { birth: "Birth".into(), live: "Stand".into(), death: String::new() },
                 // Non-zero so the round trip carries art that expects to be held
                 // somewhere other than its own origin.
                 offset: [0.5, 1.5, -0.25],

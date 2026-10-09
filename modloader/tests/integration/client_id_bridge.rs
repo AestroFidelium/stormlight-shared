@@ -19,6 +19,7 @@
 use std::io::{Cursor, Write};
 
 use stormlight_mod_abi::descriptors::{Names, Registration};
+use stormlight_mod_abi::lifetime::EffectLifetime;
 use stormlight_mod_abi::ids::{AbilityId, UnitId};
 use stormlight_mod_abi::manifest::ABI_VERSION;
 use stormlight_mod_abi::visuals::{
@@ -105,6 +106,7 @@ fn cosmetic(unit_name: &str, ability_name: &str) -> Vec<u8> {
             role: EffectRole::Projectile,
             model: model(0.9),
             attach: None,
+            lifetime: EffectLifetime::Default,
         }],
         ability_cards: vec![AbilityCard {
             ability: AbilityId(0),

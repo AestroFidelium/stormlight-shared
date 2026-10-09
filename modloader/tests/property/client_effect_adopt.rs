@@ -11,6 +11,7 @@
 
 use bolero::{TypeGenerator, check};
 use stormlight_mod_abi::descriptors::Names;
+use stormlight_mod_abi::lifetime::EffectLifetime;
 use stormlight_mod_abi::ids::AbilityId;
 use stormlight_mod_abi::manifest::ABI_VERSION;
 use stormlight_mod_abi::visuals::{
@@ -49,6 +50,7 @@ fn build(s: &Scenario) -> (ClientRegistration, Vec<(usize, EffectRole)>) {
             role,
             model: VisualModel::Primitive { shape: PrimitiveShape::Sphere, color: [0.0; 4] },
             attach: None,
+            lifetime: EffectLifetime::Default,
         })
         .collect();
     let reg = ClientRegistration {

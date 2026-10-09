@@ -26,10 +26,21 @@ use stormlight_mod_abi::animation::{
 };
 use stormlight_mod_abi::descriptors::Names;
 use stormlight_mod_abi::ids::{EventId, UnitId};
+use stormlight_mod_abi::lifetime::{EffectLifetime, HostEnd};
 use stormlight_mod_abi::manifest::ABI_VERSION;
 use stormlight_mod_abi::notify::{NotifyAction, NotifyAttach, NotifyPoint, NotifyTime};
 use stormlight_mod_abi::visuals::{ClientRegistration, NamedEffect, PrimitiveShape, VisualModel};
 use stormlight_modloader::client::AdoptedVisuals;
+
+/// A notify effect that says nothing about how long it lives or how it ends.
+fn named(name: &str, model: VisualModel) -> NamedEffect {
+    NamedEffect {
+        name: name.to_string(),
+        model,
+        lifetime: EffectLifetime::Default,
+        on_host_end: HostEnd::Follow,
+    }
+}
 
 #[derive(Debug, TypeGenerator)]
 struct Scenario {
@@ -132,7 +143,7 @@ fn build(s: &Scenario) -> Built {
             },
             animations: vec![an_animation(0, notifies)],
             named_effects: (0..keys)
-                .map(|k| NamedEffect { name: format!("fx{k}"), model: a_model(k) })
+                .map(|k| named(&format!("fx{k}"), a_model(k)))
                 .collect(),
             ..ClientRegistration::default()
         },
@@ -227,7 +238,7 @@ fn two_packages_declaring_the_same_name_keep_their_own_effects() {
         abi: ABI_VERSION,
         names: Names { units: vec!["hero".to_string()], ..Names::default() },
         animations: vec![an_animation(0, vec![effect_notify("footstep")])],
-        named_effects: vec![NamedEffect { name: "footstep".to_string(), model: a_model(0) }],
+        named_effects: vec![named("footstep", a_model(0))],
         ..ClientRegistration::default()
     };
     let first = AdoptedVisuals::adopt(&reg, "boots").expect("adopts");
