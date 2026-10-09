@@ -5,6 +5,7 @@
 //! Keep invariants directional/structural, never magnitude-only.
 
 mod predicted_corridor;
+mod predicted_field;
 mod predicted_intent;
 mod predicted_motion;
 mod predicted_pace;

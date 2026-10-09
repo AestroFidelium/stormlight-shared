@@ -76,6 +76,9 @@ impl Plugin for ProtocolPlugin {
         // …and when it changed, by tick (stormlight/server#225), so a predicting
         // client re-steps every tick at the pace that tick ran at.
         crate::pace_log::register(app);
+        // …and what a predicting client needs to work its own unit's pace out for
+        // itself where a field already stands (stormlight/server#232).
+        crate::time_field::register(app);
 
         // What is waiting to land on a unit in stopped time
         // (stormlight/server#223), so a client can draw blows piling up on it.

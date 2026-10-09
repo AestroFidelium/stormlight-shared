@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use stormlight_navigation::ActiveNavMesh;
 
 use crate::pace_log::PaceLog;
+use crate::time_field::{KnownFields, PaceTerms, predicted_pace, remember_fields};
 use crate::time_scale::TimeScale;
 
 /// Register the mover's replicated stats. Called from
@@ -513,6 +514,10 @@ pub fn predict_movement(
     // ran at (stormlight/server#225). Optional: an app with no timeline steps at
     // the world's pace.
     timeline: Option<Res<LocalTimeline>>,
+    // What this client knows about the fields that may bend its unit
+    // (stormlight/server#232): the terms ride the owner's own view entity.
+    known: Option<Res<KnownFields>>,
+    terms: Query<&PaceTerms>,
     mut commands: Commands,
     mut q: Query<
         (
@@ -529,10 +534,15 @@ pub fn predict_movement(
     >,
 ) {
     let tick = timeline.map(|t| t.tick());
+    let terms = terms.iter().next();
     for (entity, goal, intent, base, turn, mut transform, mut path, log) in &mut q {
-        let pace = log.zip(tick).map_or(TimeScale::NORMAL, |(log, tick)| log.pace_at(tick));
-        let dt = pace.apply(time.delta_secs());
         let pos = Vec2::new(transform.translation.x, transform.translation.z);
+        // The pace this tick runs at, from where the unit stands as it starts — the
+        // same moment the server derives it at.
+        let pace = tick.map_or(TimeScale::NORMAL, |tick| {
+            predicted_pace(terms, known.as_deref(), log, pos, tick)
+        });
+        let dt = pace.apply(time.delta_secs());
         let cur_yaw = yaw_of(&transform);
         let turn_rate = turn_rate_of(turn);
         let target = steer_target(path.as_deref(), goal.0);
@@ -678,9 +688,12 @@ impl Plugin for PredictedMovementPlugin {
         // below is whichever one the server is actually running, not whichever one
         // this client last asked for (stormlight/server#151). The facing is taken
         // up last, after the walk has had its say about whether the unit moved.
-        app.add_systems(
+        app.init_resource::<KnownFields>().add_systems(
             FixedUpdate,
             (
+                // What the fields around are, before anything is stepped through
+                // them (stormlight/server#232).
+                remember_fields,
                 adopt_move_intent,
                 plan_predicted_paths,
                 // A unit carried along a motion is placed by it, not walked
