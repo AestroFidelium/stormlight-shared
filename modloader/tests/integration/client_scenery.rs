@@ -63,7 +63,7 @@ fn package(id: &str, pieces: &[SceneryPiece]) -> Vec<u8> {
 fn piece(id: &str, n: usize, live: &str) -> SceneryPiece {
     SceneryPiece {
         asset: format!("mod://{id}/scenery/{n}.glb"),
-        clips: ModelClips { birth: String::new(), live: live.into() },
+        clips: ModelClips { live: live.into(), ..ModelClips::default() },
         placements: vec![
             SceneryPlacement::IDENTITY,
             SceneryPlacement { translation: [n as f32, 0.0, -2.0], ..SceneryPlacement::IDENTITY },

@@ -34,7 +34,10 @@ use stormlight_mod_abi::talent_tree::TalentTree;
 use stormlight_mod_abi::talents::AbilityFocus;
 use stormlight_mod_abi::tasks::QuestSpec;
 use stormlight_mod_abi::ui::UiRoot;
-use stormlight_mod_abi::visuals::{CardInfo, ClientRegistration, EffectRole, VisualModel};
+use stormlight_mod_abi::lifetime::EffectLifetime;
+use stormlight_mod_abi::visuals::{
+    CardInfo, ClientRegistration, EffectRole, NamedEffect, VisualModel,
+};
 
 use crate::host::Host;
 use crate::loader::{self, LoadedMod};
@@ -53,6 +56,10 @@ pub struct AdoptedVisuals {
     /// (stormlight/server#160), under the same `(ability name, role)` key as the
     /// visual — only for the visuals that asked.
     by_effect_attach: BTreeMap<(String, EffectRole), AttachPoint>,
+    /// How long each effect visual lives (stormlight/server#167), under the same
+    /// `(ability name, role)` key as the visual — for every visual, the default
+    /// included, so a later declaration never inherits an earlier one's.
+    by_effect_lifetime: BTreeMap<(String, EffectRole), EffectLifetime>,
     /// The icon each ability wears in an interface (server#94), keyed by the same
     /// ability **name** its feedback visuals are keyed by. A picture rather than a
     /// [`VisualModel`]: an icon is a flat asset in a widget.
@@ -67,7 +74,9 @@ pub struct AdoptedVisuals {
     /// it has nothing of its own to print there.
     by_card: BTreeMap<String, CardInfo>,
     by_animation: BTreeMap<String, AnimationDescriptor>,
-    by_notify_key: BTreeMap<String, VisualModel>,
+    /// The effects an animation notify can spawn (server#76), keyed by the
+    /// package-qualified name — which is also the `name` each one carries here.
+    by_notify_key: BTreeMap<String, NamedEffect>,
     /// The widget trees this mod declared (server#67), in **declaration order** —
     /// the only table here that is a list rather than a map. Nothing outside a
     /// tree names one, and the client draws every root it is given, so there is no
@@ -172,6 +181,7 @@ impl AdoptedVisuals {
         }
         let mut by_effect = BTreeMap::new();
         let mut by_effect_attach = BTreeMap::new();
+        let mut by_effect_lifetime = BTreeMap::new();
         for e in &reg.effects {
             let name = reg.names.abilities.get(e.ability.0 as usize).ok_or_else(|| {
                 anyhow!(
@@ -179,7 +189,13 @@ impl AdoptedVisuals {
                     e.ability.0
                 )
             })?;
+            // Refused here rather than handed on: a burst that retires on the frame
+            // it appears is never seen, and one that never retires is a leak per hit.
+            if !e.lifetime.is_runnable() {
+                bail!("effect visual `{name}` {:?}: a lifetime no clock can run", e.role);
+            }
             by_effect.insert((name.clone(), e.role), e.model.clone());
+            by_effect_lifetime.insert((name.clone(), e.role), e.lifetime);
             // Replaced or cleared with the visual, so a later declaration of the
             // same key never inherits an earlier one's point.
             match &e.attach {
@@ -253,8 +269,14 @@ impl AdoptedVisuals {
             }
             by_animation.insert(name.clone(), adopted);
         }
-        let by_notify_key =
-            reg.named_effects.iter().map(|e| (qualify(mod_id, &e.name), e.model.clone())).collect();
+        let mut by_notify_key = BTreeMap::new();
+        for e in &reg.named_effects {
+            if !e.lifetime.is_runnable() {
+                bail!("notify effect `{}`: a lifetime no clock can run", e.name);
+            }
+            let key = qualify(mod_id, &e.name);
+            by_notify_key.insert(key.clone(), NamedEffect { name: key, ..e.clone() });
+        }
         // Structural validation of the interface, for the same reason animations
         // are validated here: past this point the tree reaches a renderer that
         // would draw a blank rectangle and explain nothing.
@@ -286,6 +308,7 @@ impl AdoptedVisuals {
             by_name,
             by_effect,
             by_effect_attach,
+            by_effect_lifetime,
             by_icon,
             by_unit_icon,
             by_card,
@@ -315,6 +338,14 @@ impl AdoptedVisuals {
     #[must_use]
     pub fn effect_attach(&self, ability_name: &str, role: EffectRole) -> Option<&AttachPoint> {
         self.by_effect_attach.get(&(ability_name.to_string(), role))
+    }
+
+    /// How long the feedback visual for `ability_name` in `role` lives
+    /// (stormlight/server#167) — the default for a visual that never said, or for
+    /// one that was never declared.
+    #[must_use]
+    pub fn effect_lifetime(&self, ability_name: &str, role: EffectRole) -> EffectLifetime {
+        self.by_effect_lifetime.get(&(ability_name.to_string(), role)).copied().unwrap_or_default()
     }
 
     /// The picture declared for `ability_name`, if its card has one — what an
@@ -372,12 +403,12 @@ impl AdoptedVisuals {
     /// The cosmetic effect declared under the package-qualified `key`, if any —
     /// what an animation notify spawns (server#76).
     #[must_use]
-    pub fn named_effect(&self, key: &str) -> Option<&VisualModel> {
+    pub fn named_effect(&self, key: &str) -> Option<&NamedEffect> {
         self.by_notify_key.get(key)
     }
 
     /// Iterate the `(qualified key, effect)` pairs, in key order.
-    pub fn named_effects(&self) -> impl Iterator<Item = (&String, &VisualModel)> {
+    pub fn named_effects(&self) -> impl Iterator<Item = (&String, &NamedEffect)> {
         self.by_notify_key.iter()
     }
 
@@ -450,6 +481,14 @@ impl AdoptedVisuals {
     pub fn effect_attaches(&self) -> impl Iterator<Item = (&(String, EffectRole), &AttachPoint)> {
         self.by_effect_attach.iter()
     }
+
+    /// Iterate the `((ability name, role), lifetime)` pairs of every effect visual,
+    /// in key order.
+    pub fn effect_lifetimes(
+        &self,
+    ) -> impl Iterator<Item = (&(String, EffectRole), &EffectLifetime)> {
+        self.by_effect_lifetime.iter()
+    }
 }
 
 /// The client-side host: loads cosmetic mods, runs each guest's registration,
@@ -463,6 +502,8 @@ pub struct ClientHost {
     /// Where each effect visual asked to hang on its unit's rig (server#160),
     /// merged across mods under the visual's own key.
     effect_attach: BTreeMap<(String, EffectRole), AttachPoint>,
+    /// How long each effect visual lives (server#167), merged with the visual.
+    effect_lifetime: BTreeMap<(String, EffectRole), EffectLifetime>,
     /// Each ability's interface icon, keyed by ability name until
     /// [`icons_by_id`](ClientHost::icons_by_id) crosses the same name→global-id
     /// bridge the visuals cross (server#94).
@@ -478,7 +519,7 @@ pub struct ClientHost {
     animations: BTreeMap<String, AnimationDescriptor>,
     /// Cosmetic effects an animation notify spawns (server#76), keyed by the
     /// package-qualified name their declaring mod gave them.
-    notify_effects: BTreeMap<String, VisualModel>,
+    notify_effects: BTreeMap<String, NamedEffect>,
     /// The gameplay-side name→global-id maps, rebuilt from each loaded gameplay
     /// mod's `Names` in load order — the same interning server adoption does, so
     /// a cosmetic's name resolves to the id the wire carries (`UnitTag` / `vfx`).
@@ -575,6 +616,7 @@ impl ClientHost {
             visuals: BTreeMap::new(),
             effects: BTreeMap::new(),
             effect_attach: BTreeMap::new(),
+            effect_lifetime: BTreeMap::new(),
             icons: BTreeMap::new(),
             unit_icons: BTreeMap::new(),
             cards: BTreeMap::new(),
@@ -919,6 +961,17 @@ impl ClientHost {
             .filter_map(|((name, role), point)| Some(((self.ability_ids.get(name)?, *role), point)))
     }
 
+    /// How long each adopted effect visual lives (stormlight/server#167), keyed
+    /// exactly as [`effects_by_id`](Self::effects_by_id) keys the visuals — and
+    /// skipped for the same abilities.
+    pub fn effect_lifetime_by_id(
+        &self,
+    ) -> impl Iterator<Item = ((AbilityId, EffectRole), EffectLifetime)> + '_ {
+        self.effect_lifetime.iter().filter_map(|((name, role), lifetime)| {
+            Some(((self.ability_ids.get(name)?, *role), *lifetime))
+        })
+    }
+
     /// Every adopted ability icon keyed by the **global `AbilityId`** the wire
     /// carries, the picture an interface draws for whichever slot binds that
     /// ability (server#94). An icon for an ability no loaded gameplay mod defines
@@ -995,6 +1048,7 @@ impl ClientHost {
                 Some(point) => self.effect_attach.insert(key.clone(), point.clone()),
                 None => self.effect_attach.remove(key),
             };
+            self.effect_lifetime.insert(key.clone(), adopted.effect_lifetime(&key.0, key.1));
         }
         for (ability, card) in adopted.ability_cards() {
             self.icons.insert(ability.clone(), card.clone());
@@ -1010,8 +1064,8 @@ impl ClientHost {
         }
         // Keys are already package-qualified, so two mods never overwrite each
         // other here — the merge is a union, not a race.
-        for (key, model) in adopted.named_effects() {
-            self.notify_effects.insert(key.clone(), model.clone());
+        for (key, effect) in adopted.named_effects() {
+            self.notify_effects.insert(key.clone(), effect.clone());
         }
         // Interfaces are appended, never merged: two mods each declaring a HUD
         // both get one, and a later mod cannot silently replace an earlier one's
@@ -1128,7 +1182,7 @@ impl ClientHost {
     /// notify runtime resolves against. Unlike the unit and ability tables this
     /// needs no id bridge: the key never crosses the wire, and is resolved only
     /// against the animation that named it.
-    pub fn named_effects(&self) -> impl Iterator<Item = (&String, &VisualModel)> {
+    pub fn named_effects(&self) -> impl Iterator<Item = (&String, &NamedEffect)> {
         self.notify_effects.iter()
     }
 

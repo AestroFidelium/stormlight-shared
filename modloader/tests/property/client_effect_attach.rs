@@ -10,6 +10,7 @@
 use bolero::{TypeGenerator, check};
 use stormlight_mod_abi::attach::AttachPoint;
 use stormlight_mod_abi::descriptors::Names;
+use stormlight_mod_abi::lifetime::EffectLifetime;
 use stormlight_mod_abi::ids::AbilityId;
 use stormlight_mod_abi::manifest::ABI_VERSION;
 use stormlight_mod_abi::visuals::{
@@ -57,6 +58,7 @@ fn every_declared_point_survives_adoption_under_its_visuals_key() {
                 role: role(d),
                 model: VisualModel::Primitive { shape: PrimitiveShape::Cube, color: [1.0; 4] },
                 attach: request(d),
+                lifetime: EffectLifetime::Default,
             })
             .collect();
         let reg = ClientRegistration {
