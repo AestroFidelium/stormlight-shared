@@ -8,6 +8,7 @@ mod client_ability_card_adopt;
 mod client_adopt;
 mod client_animation_adopt;
 mod client_card_adopt;
+mod client_decal_adopt;
 mod client_effect_adopt;
 mod client_effect_attach;
 mod client_effect_life;
