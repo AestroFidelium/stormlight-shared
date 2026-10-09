@@ -156,6 +156,8 @@ impl Plugin for ProtocolPlugin {
         // Which buffs each unit carries, for the art that draws them (server#171).
         crate::statuses::register(app);
         crate::tasks::register(app);
+        // …and each payout as it happens, so an interface can flash (server#184).
+        crate::task_payout::register(app);
 
         // Interface triggers (stormlight/server#69): a declared widget raising a
         // mod-defined event into that mod's own gameplay guest. The interface's
