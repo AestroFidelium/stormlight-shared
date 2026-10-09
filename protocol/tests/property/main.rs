@@ -27,6 +27,7 @@ mod shot_target;
 mod slot_passive;
 mod slots;
 mod stacks;
+mod statuses;
 mod swing_progress;
 mod talent_pick;
 mod time_field;
