@@ -36,6 +36,7 @@ use stormlight_mod_abi::talent_tree::TalentTree;
 use stormlight_mod_abi::talents::AbilityFocus;
 use stormlight_mod_abi::tasks::QuestSpec;
 use stormlight_mod_abi::ui::UiRoot;
+use stormlight_mod_abi::unit_mark::UnitMark;
 use stormlight_mod_abi::visuals::{
     CardInfo, ClientRegistration, EffectRole, NamedEffect, VisualModel,
 };
@@ -94,6 +95,8 @@ pub struct AdoptedVisuals {
     ground: Option<HeightField>,
     /// The light this mod's map is seen in, if it declares one.
     environment: Option<Environment>,
+    /// What this mod lays under units (server#181), in declaration order.
+    unit_marks: Vec<UnitMark>,
 }
 
 /// Why a scenery placement cannot be drawn, if it cannot: a non-finite component
@@ -328,6 +331,12 @@ impl AdoptedVisuals {
         {
             bail!("ground height field is unusable (size, spacing or a non-finite sample)");
         }
+        if let Some(i) = reg.unit_marks.iter().position(|mark| !mark.look.is_valid()) {
+            bail!(
+                "unit mark {i} ({:?}): no picture, a non-finite tint, or a width that is not positive",
+                reg.unit_marks[i].role
+            );
+        }
         if let Some(environment) = &reg.environment
             && !environment.is_valid()
         {
@@ -359,6 +368,7 @@ impl AdoptedVisuals {
             scenery: reg.scenery.clone(),
             ground: reg.ground.clone(),
             environment: reg.environment.clone(),
+            unit_marks: reg.unit_marks.clone(),
         })
     }
 
@@ -493,6 +503,14 @@ impl AdoptedVisuals {
             && self.scenery.is_empty()
             && self.ground.is_none()
             && self.environment.is_none()
+            && self.unit_marks.is_empty()
+    }
+
+    /// What this mod lays under units by the role they play for the viewer
+    /// (server#181), in declaration order — which is precedence.
+    #[must_use]
+    pub fn unit_marks(&self) -> &[UnitMark] {
+        &self.unit_marks
     }
 
     /// The light this mod's map is seen in, if it declares one.
@@ -659,6 +677,9 @@ pub struct ClientHost {
     /// The map environment the loaded cosmetic mods declared; the last one loaded
     /// wins, like the ground.
     environment: Option<Environment>,
+    /// What every loaded cosmetic mod lays under units (server#181): one list, in
+    /// load order and each mod's declaration order, the first that fits winning.
+    unit_marks: Vec<UnitMark>,
     /// Whether a cosmetic mod has been adopted yet. The binding bridge interns as
     /// it goes, so a gameplay mod arriving *after* a cosmetic one would intern its
     /// names above whatever that cosmetic already claimed, landing every one of
@@ -698,6 +719,7 @@ impl ClientHost {
             scenery: Vec::new(),
             ground: None,
             environment: None,
+            unit_marks: Vec::new(),
             cosmetics_loaded: false,
         })
     }
@@ -1159,9 +1181,20 @@ impl ClientHost {
         if let Some(environment) = adopted.environment() {
             self.environment = Some(environment.clone());
         }
+        // Appended: an earlier mod's marks speak first, as declared order does
+        // within one mod.
+        self.unit_marks.extend_from_slice(adopted.unit_marks());
         self.cosmetics_loaded = true;
         self.vfs.insert(loaded.manifest.id, source);
         Ok(())
+    }
+
+    /// What the loaded cosmetic mods lay under units by the role they play for the
+    /// viewer (server#181), in precedence order: the first that fits a unit is
+    /// the mark it wears.
+    #[must_use]
+    pub fn unit_marks(&self) -> &[UnitMark] {
+        &self.unit_marks
     }
 
     /// Every widget tree the loaded cosmetic mods declared, in load order, with

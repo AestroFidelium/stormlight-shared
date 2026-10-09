@@ -19,3 +19,4 @@ mod client_scenery_adopt;
 mod client_shadow_adopt;
 mod client_status_adopt;
 mod client_ui_adopt;
+mod client_unit_marks_adopt;

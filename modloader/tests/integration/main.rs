@@ -15,6 +15,7 @@ mod client_talent_names;
 mod client_talent_quest;
 mod client_ui_action_bridge;
 mod client_ui_bridge;
+mod client_unit_marks;
 mod invoke;
 mod loader;
 mod register;

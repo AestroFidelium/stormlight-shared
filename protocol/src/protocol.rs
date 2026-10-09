@@ -174,5 +174,12 @@ impl Plugin for ProtocolPlugin {
         // saying what a unit should do next, and whether it replaces the plan or
         // is appended to it. Ordered-reliable, because a plan is a sequence.
         crate::orders::register(app);
+
+        // What the client marks units by (stormlight/server#181): which side each
+        // is on and how wide its body is, both public; and whom the owner's unit
+        // is attacking, on the owner's own view.
+        crate::team::register(app);
+        crate::body_radius::register(app);
+        crate::engaged::register(app);
     }
 }
