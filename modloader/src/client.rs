@@ -181,6 +181,13 @@ impl AdoptedVisuals {
             let name = reg.names.units.get(v.unit.0 as usize).ok_or_else(|| {
                 anyhow!("visual references unit handle {} with no name-table entry", v.unit.0)
             })?;
+            // A shadow no renderer can draw is refused here, naming the unit, for
+            // the reason scenery placements are (server#179).
+            if let VisualModel::Model { shadow, .. } = &v.model
+                && !shadow.is_valid()
+            {
+                bail!("unit visual `{name}`: a shadow radius no renderer can draw");
+            }
             by_name.insert(name.clone(), v.model.clone());
         }
         let mut by_effect = BTreeMap::new();
