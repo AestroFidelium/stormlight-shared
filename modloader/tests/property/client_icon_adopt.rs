@@ -17,7 +17,7 @@ use bolero::{TypeGenerator, check};
 use stormlight_mod_abi::descriptors::Names;
 use stormlight_mod_abi::ids::AbilityId;
 use stormlight_mod_abi::manifest::ABI_VERSION;
-use stormlight_mod_abi::visuals::{AbilityIcon, ClientRegistration};
+use stormlight_mod_abi::visuals::{AbilityCard, CardInfo, ClientRegistration};
 use stormlight_modloader::client::AdoptedVisuals;
 
 #[derive(Debug, TypeGenerator)]
@@ -43,15 +43,15 @@ fn build(s: &Scenario) -> (ClientRegistration, Vec<usize>) {
     let icons = keys
         .iter()
         .enumerate()
-        .map(|(i, &handle)| AbilityIcon {
+        .map(|(i, &handle)| AbilityCard {
             ability: AbilityId(handle as u32),
-            image: path(i, handle),
+            info: CardInfo { image: path(i, handle), ..CardInfo::default() },
         })
         .collect();
     let reg = ClientRegistration {
         abi: ABI_VERSION,
         names: Names { abilities, ..Names::default() },
-        icons,
+        ability_cards: icons,
         ..ClientRegistration::default()
     };
     (reg, keys)

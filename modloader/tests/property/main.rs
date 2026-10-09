@@ -4,6 +4,7 @@
 //! drop a <feature>.rs beside this file and declare `mod <feature>;` here.
 //! Keep invariants directional/structural, never magnitude-only.
 
+mod client_ability_card_adopt;
 mod client_adopt;
 mod client_animation_adopt;
 mod client_card_adopt;

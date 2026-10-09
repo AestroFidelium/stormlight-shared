@@ -22,7 +22,7 @@ use stormlight_mod_abi::descriptors::{Names, Registration};
 use stormlight_mod_abi::ids::{AbilityId, UnitId};
 use stormlight_mod_abi::manifest::ABI_VERSION;
 use stormlight_mod_abi::visuals::{
-    AbilityIcon, ClientRegistration, EffectRole, EffectVisualDescriptor, PrimitiveShape,
+    AbilityCard, CardInfo, ClientRegistration, EffectRole, EffectVisualDescriptor, PrimitiveShape,
     VisualDescriptor, VisualModel,
 };
 use stormlight_modloader::client::ClientHost;
@@ -106,7 +106,10 @@ fn cosmetic(unit_name: &str, ability_name: &str) -> Vec<u8> {
             model: model(0.9),
             attach: None,
         }],
-        icons: vec![AbilityIcon { ability: AbilityId(0), image: ICON.into() }],
+        ability_cards: vec![AbilityCard {
+            ability: AbilityId(0),
+            info: CardInfo { image: ICON.into(), ..CardInfo::default() },
+        }],
         ..ClientRegistration::default()
     };
     package("cosmetic", "client", &postcard::to_allocvec(&reg).unwrap())

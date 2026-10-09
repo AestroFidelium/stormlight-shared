@@ -21,7 +21,7 @@ use bolero::{TypeGenerator, check};
 use stormlight_mod_abi::descriptors::Names;
 use stormlight_mod_abi::ids::TalentId;
 use stormlight_mod_abi::manifest::ABI_VERSION;
-use stormlight_mod_abi::visuals::{ClientRegistration, TalentCard, TalentInfo};
+use stormlight_mod_abi::visuals::{CardInfo, ClientRegistration, TalentCard};
 use stormlight_modloader::client::AdoptedVisuals;
 
 #[derive(Debug, TypeGenerator)]
@@ -34,8 +34,8 @@ struct Scenario {
 
 /// The words a card declared against the `i`-th handle carries, made unique per
 /// declaration index so "the later one wins" is observable.
-fn info(index: usize, handle: usize) -> TalentInfo {
-    TalentInfo {
+fn info(index: usize, handle: usize) -> CardInfo {
+    CardInfo {
         name: format!("Talent {handle} ({index})"),
         description: format!("what talent {handle} does, take {index}"),
         image: format!("mod://pack/talent_{handle}_{index}.png"),
