@@ -48,6 +48,7 @@ fn build(s: &Scenario) -> (ClientRegistration, Vec<(usize, EffectRole)>) {
             ability: AbilityId(i as u32),
             role,
             model: VisualModel::Primitive { shape: PrimitiveShape::Sphere, color: [0.0; 4] },
+            attach: None,
         })
         .collect();
     let reg = ClientRegistration {
