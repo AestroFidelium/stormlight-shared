@@ -34,7 +34,7 @@ use stormlight_mod_abi::talent_tree::TalentTree;
 use stormlight_mod_abi::talents::AbilityFocus;
 use stormlight_mod_abi::tasks::QuestSpec;
 use stormlight_mod_abi::ui::UiRoot;
-use stormlight_mod_abi::visuals::{ClientRegistration, EffectRole, TalentInfo, VisualModel};
+use stormlight_mod_abi::visuals::{CardInfo, ClientRegistration, EffectRole, VisualModel};
 
 use crate::host::Host;
 use crate::loader::{self, LoadedMod};
@@ -56,7 +56,7 @@ pub struct AdoptedVisuals {
     /// The icon each ability wears in an interface (server#94), keyed by the same
     /// ability **name** its feedback visuals are keyed by. A picture rather than a
     /// [`VisualModel`]: an icon is a flat asset in a widget.
-    by_icon: BTreeMap<String, String>,
+    by_icon: BTreeMap<String, CardInfo>,
     /// The portrait each unit wears in an interface (server#145), keyed by the same
     /// unit **name** its model is keyed by. A flat picture rather than a
     /// [`VisualModel`], for the reason an ability icon is one: it lands in a widget.
@@ -65,7 +65,7 @@ pub struct AdoptedVisuals {
     /// talent **name** — the same bridge the icons cross, one family along. Words
     /// rather than a picture: a panel addresses a cell by tier and option index, so
     /// it has nothing of its own to print there.
-    by_card: BTreeMap<String, TalentInfo>,
+    by_card: BTreeMap<String, CardInfo>,
     by_animation: BTreeMap<String, AnimationDescriptor>,
     by_notify_key: BTreeMap<String, VisualModel>,
     /// The widget trees this mod declared (server#67), in **declaration order** —
@@ -188,14 +188,14 @@ impl AdoptedVisuals {
             };
         }
         let mut by_icon = BTreeMap::new();
-        for icon in &reg.icons {
-            let name = reg.names.abilities.get(icon.ability.0 as usize).ok_or_else(|| {
+        for card in &reg.ability_cards {
+            let name = reg.names.abilities.get(card.ability.0 as usize).ok_or_else(|| {
                 anyhow!(
-                    "icon references ability handle {} with no name-table entry",
-                    icon.ability.0
+                    "ability card references ability handle {} with no name-table entry",
+                    card.ability.0
                 )
             })?;
-            by_icon.insert(name.clone(), icon.image.clone());
+            by_icon.insert(name.clone(), card.info.clone());
         }
         let mut by_unit_icon = BTreeMap::new();
         for icon in &reg.unit_icons {
@@ -317,15 +317,25 @@ impl AdoptedVisuals {
         self.by_effect_attach.get(&(ability_name.to_string(), role))
     }
 
-    /// The icon declared for `ability_name`, if any — the picture an interface
-    /// draws in whichever slot binds that ability (server#94).
+    /// The picture declared for `ability_name`, if its card has one — what an
+    /// interface draws in whichever slot binds that ability (server#94).
     #[must_use]
     pub fn icon(&self, ability_name: &str) -> Option<&str> {
-        self.by_icon.get(ability_name).map(String::as_str)
+        self.by_icon
+            .get(ability_name)
+            .map(|card| card.image.as_str())
+            .filter(|image| !image.is_empty())
     }
 
-    /// Iterate the `(ability name, icon path)` pairs, in name order.
-    pub fn icons(&self) -> impl Iterator<Item = (&String, &String)> {
+    /// The card declared for `ability_name`, if any — its name, words and picture
+    /// (server#116).
+    #[must_use]
+    pub fn ability_card(&self, ability_name: &str) -> Option<&CardInfo> {
+        self.by_icon.get(ability_name)
+    }
+
+    /// Iterate the `(ability name, card)` pairs, in name order.
+    pub fn ability_cards(&self) -> impl Iterator<Item = (&String, &CardInfo)> {
         self.by_icon.iter()
     }
 
@@ -344,12 +354,12 @@ impl AdoptedVisuals {
     /// The card declared for `talent_name`, if any — what a talent panel prints and
     /// draws for whichever cell offers that talent (server#95).
     #[must_use]
-    pub fn card(&self, talent_name: &str) -> Option<&TalentInfo> {
+    pub fn card(&self, talent_name: &str) -> Option<&CardInfo> {
         self.by_card.get(talent_name)
     }
 
     /// Iterate the `(talent name, card)` pairs, in name order.
-    pub fn cards(&self) -> impl Iterator<Item = (&String, &TalentInfo)> {
+    pub fn cards(&self) -> impl Iterator<Item = (&String, &CardInfo)> {
         self.by_card.iter()
     }
 
@@ -456,7 +466,7 @@ pub struct ClientHost {
     /// Each ability's interface icon, keyed by ability name until
     /// [`icons_by_id`](ClientHost::icons_by_id) crosses the same name→global-id
     /// bridge the visuals cross (server#94).
-    icons: BTreeMap<String, String>,
+    icons: BTreeMap<String, CardInfo>,
     /// Each unit's portrait, keyed by unit name until
     /// [`unit_icons_by_id`](ClientHost::unit_icons_by_id) crosses the same
     /// name→global-id bridge the visuals cross (server#145).
@@ -464,7 +474,7 @@ pub struct ClientHost {
     /// Each talent's card, keyed by talent name until
     /// [`cards_by_id`](ClientHost::cards_by_id) crosses the same name→global-id
     /// bridge the icons cross (server#95).
-    cards: BTreeMap<String, TalentInfo>,
+    cards: BTreeMap<String, CardInfo>,
     animations: BTreeMap<String, AnimationDescriptor>,
     /// Cosmetic effects an animation notify spawns (server#76), keyed by the
     /// package-qualified name their declaring mod gave them.
@@ -850,6 +860,16 @@ impl ClientHost {
         })
     }
 
+    /// Every gameplay ability's interned name, keyed by its **global `AbilityId`** —
+    /// what an ability whose mod carded no name prints (server#116), exactly as an
+    /// uncarded talent prints its own.
+    pub fn ability_names(&self) -> impl Iterator<Item = (AbilityId, &str)> {
+        (0..self.ability_ids.len() as u32).filter_map(|raw| {
+            let id = AbilityId::from_raw(raw);
+            self.ability_ids.resolve(id).map(|name| (id, name))
+        })
+    }
+
     /// Every gameplay ability's declared aim mode, keyed by the **global
     /// `AbilityId`** the wire carries — how the client learns what kind of `Aim`
     /// to build when a slot's key is pressed.
@@ -905,9 +925,16 @@ impl ClientHost {
     /// is skipped, exactly like [`effects_by_id`](Self::effects_by_id) — the slot
     /// then wears whatever its HUD declared for an empty socket.
     pub fn icons_by_id(&self) -> impl Iterator<Item = (AbilityId, &str)> {
-        self.icons
-            .iter()
-            .filter_map(|(name, image)| Some((self.ability_ids.get(name)?, image.as_str())))
+        self.ability_cards_by_id()
+            .map(|(ability, card)| (ability, card.image.as_str()))
+            .filter(|(_, image)| !image.is_empty())
+    }
+
+    /// Every adopted ability card keyed by the **global `AbilityId`**: what a HUD
+    /// prints for whichever slot binds that ability (server#116). Skipped for the
+    /// abilities no loaded gameplay mod defines, like the icons.
+    pub fn ability_cards_by_id(&self) -> impl Iterator<Item = (AbilityId, &CardInfo)> {
+        self.icons.iter().filter_map(|(name, card)| Some((self.ability_ids.get(name)?, card)))
     }
 
     /// Every adopted unit portrait keyed by the **global `UnitId`** the wire
@@ -927,7 +954,7 @@ impl ClientHost {
     /// talent (server#95). A card for a talent no loaded gameplay mod declares is
     /// skipped, exactly like [`icons_by_id`](Self::icons_by_id) — the cell then
     /// prints the interned identifier and wears the interface's own empty socket.
-    pub fn cards_by_id(&self) -> impl Iterator<Item = (TalentId, &TalentInfo)> {
+    pub fn cards_by_id(&self) -> impl Iterator<Item = (TalentId, &CardInfo)> {
         self.cards.iter().filter_map(|(name, card)| Some((self.talent_ids.get(name)?, card)))
     }
 
@@ -969,8 +996,8 @@ impl ClientHost {
                 None => self.effect_attach.remove(key),
             };
         }
-        for (ability, image) in adopted.icons() {
-            self.icons.insert(ability.clone(), image.clone());
+        for (ability, card) in adopted.ability_cards() {
+            self.icons.insert(ability.clone(), card.clone());
         }
         for (unit, image) in adopted.unit_icons() {
             self.unit_icons.insert(unit.clone(), image.clone());
