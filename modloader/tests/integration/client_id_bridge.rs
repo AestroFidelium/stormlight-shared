@@ -19,8 +19,8 @@
 use std::io::{Cursor, Write};
 
 use stormlight_mod_abi::descriptors::{Names, Registration};
-use stormlight_mod_abi::lifetime::EffectLifetime;
 use stormlight_mod_abi::ids::{AbilityId, UnitId};
+use stormlight_mod_abi::lifetime::EffectLifetime;
 use stormlight_mod_abi::manifest::ABI_VERSION;
 use stormlight_mod_abi::visuals::{
     AbilityCard, CardInfo, ClientRegistration, EffectRole, EffectVisualDescriptor, PrimitiveShape,

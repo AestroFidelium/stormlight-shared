@@ -153,6 +153,8 @@ impl Plugin for ProtocolPlugin {
         // entity are — three casts from a payout is exactly when not to be
         // contested.
         crate::stacks::register(app);
+        // Which buffs each unit carries, for the art that draws them (server#171).
+        crate::statuses::register(app);
         crate::tasks::register(app);
 
         // Interface triggers (stormlight/server#69): a declared widget raising a

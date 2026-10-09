@@ -11,8 +11,8 @@
 
 use bolero::{TypeGenerator, check};
 use stormlight_mod_abi::descriptors::Names;
-use stormlight_mod_abi::lifetime::EffectLifetime;
 use stormlight_mod_abi::ids::AbilityId;
+use stormlight_mod_abi::lifetime::EffectLifetime;
 use stormlight_mod_abi::manifest::ABI_VERSION;
 use stormlight_mod_abi::visuals::{
     ClientRegistration, EffectRole, EffectVisualDescriptor, PrimitiveShape, VisualModel,

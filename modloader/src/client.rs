@@ -23,18 +23,19 @@ use stormlight_mod_abi::animation::{AnimState, AnimationDescriptor};
 use stormlight_mod_abi::attach::AttachPoint;
 use stormlight_mod_abi::descriptors::Names;
 use stormlight_mod_abi::environment::Environment;
-use stormlight_mod_abi::ids::{AbilityId, Handle, ResourceId, TalentId, UnitId};
+use stormlight_mod_abi::ids::{AbilityId, BuffId, Handle, ResourceId, TalentId, UnitId};
 use stormlight_mod_abi::interner::Interner;
+use stormlight_mod_abi::lifetime::EffectLifetime;
 use stormlight_mod_abi::manifest::{ABI_VERSION, ModKind};
 use stormlight_mod_abi::navmesh::NavMeshDescriptor;
 use stormlight_mod_abi::notify::{NotifyAction, NotifyPoint};
 use stormlight_mod_abi::remap::{IdMap, RemapIds};
 use stormlight_mod_abi::scenery::{HeightField, SceneryPiece, SceneryPlacement};
+use stormlight_mod_abi::status_visual::StatusLook;
 use stormlight_mod_abi::talent_tree::TalentTree;
 use stormlight_mod_abi::talents::AbilityFocus;
 use stormlight_mod_abi::tasks::QuestSpec;
 use stormlight_mod_abi::ui::UiRoot;
-use stormlight_mod_abi::lifetime::EffectLifetime;
 use stormlight_mod_abi::visuals::{
     CardInfo, ClientRegistration, EffectRole, NamedEffect, VisualModel,
 };
@@ -77,6 +78,9 @@ pub struct AdoptedVisuals {
     /// The effects an animation notify can spawn (server#76), keyed by the
     /// package-qualified name — which is also the `name` each one carries here.
     by_notify_key: BTreeMap<String, NamedEffect>,
+    /// How each status this mod dresses is drawn (server#171), keyed by the buff
+    /// **name** — the same bridge the abilities cross, one family along.
+    by_status: BTreeMap<String, StatusLook>,
     /// The widget trees this mod declared (server#67), in **declaration order** —
     /// the only table here that is a list rather than a map. Nothing outside a
     /// tree names one, and the client draws every root it is given, so there is no
@@ -213,6 +217,21 @@ impl AdoptedVisuals {
             })?;
             by_icon.insert(name.clone(), card.info.clone());
         }
+        let mut by_status = BTreeMap::new();
+        for status in &reg.status_visuals {
+            let name = reg.names.buffs.get(usize::from(status.buff.0)).ok_or_else(|| {
+                anyhow!(
+                    "status visual references buff handle {} with no name-table entry",
+                    status.buff.0
+                )
+            })?;
+            // Refused rather than carried: a look nobody can see is a declaration the
+            // renderer would honour by drawing nothing, forever, and saying nothing.
+            if !status.look.shows_anything() {
+                bail!("status visual `{name}` shows nothing to anyone");
+            }
+            by_status.insert(name.clone(), status.look.clone());
+        }
         let mut by_unit_icon = BTreeMap::new();
         for icon in &reg.unit_icons {
             let name = reg.names.units.get(icon.unit.0 as usize).ok_or_else(|| {
@@ -314,6 +333,7 @@ impl AdoptedVisuals {
             by_card,
             by_animation,
             by_notify_key,
+            by_status,
             ui: reg.ui.clone(),
             scenery: reg.scenery.clone(),
             ground: reg.ground.clone(),
@@ -417,6 +437,18 @@ impl AdoptedVisuals {
         self.by_animation.iter()
     }
 
+    /// How the status the buff named `buff` grants is drawn (server#171), if this
+    /// mod dresses it.
+    #[must_use]
+    pub fn status_look(&self, buff: &str) -> Option<&StatusLook> {
+        self.by_status.get(buff)
+    }
+
+    /// Iterate the `(buff name, look)` pairs, in buff-name order.
+    pub fn status_looks(&self) -> impl Iterator<Item = (&String, &StatusLook)> {
+        self.by_status.iter()
+    }
+
     /// Number of units this mod dresses.
     #[must_use]
     pub fn len(&self) -> usize {
@@ -435,6 +467,7 @@ impl AdoptedVisuals {
             && self.by_card.is_empty()
             && self.by_animation.is_empty()
             && self.by_notify_key.is_empty()
+            && self.by_status.is_empty()
             && self.ui.is_empty()
             && self.scenery.is_empty()
             && self.ground.is_none()
@@ -520,6 +553,9 @@ pub struct ClientHost {
     /// Cosmetic effects an animation notify spawns (server#76), keyed by the
     /// package-qualified name their declaring mod gave them.
     notify_effects: BTreeMap<String, NamedEffect>,
+    /// How each dressed status is drawn (server#171), keyed by buff name until
+    /// [`status_looks_by_id`](ClientHost::status_looks_by_id) crosses the bridge.
+    statuses: BTreeMap<String, StatusLook>,
     /// The gameplay-side name→global-id maps, rebuilt from each loaded gameplay
     /// mod's `Names` in load order — the same interning server adoption does, so
     /// a cosmetic's name resolves to the id the wire carries (`UnitTag` / `vfx`).
@@ -534,6 +570,8 @@ pub struct ClientHost {
     /// id space, reconstructed from gameplay `Names` — no cosmetic mod ever names
     /// a talent.
     talent_ids: Interner<TalentId>,
+    /// Buffs, for the statuses a unit carries on the wire (server#171).
+    buff_ids: Interner<BuffId>,
     /// How each gameplay ability is aimed, keyed by the **global `AbilityId`**
     /// (server#59). The client cannot decide an aim mode locally — it is mod data
     /// like everything else — so the same gameplay pass that rebuilds the id map
@@ -622,9 +660,11 @@ impl ClientHost {
             cards: BTreeMap::new(),
             animations: BTreeMap::new(),
             notify_effects: BTreeMap::new(),
+            statuses: BTreeMap::new(),
             unit_ids: Interner::new(),
             ability_ids: Interner::new(),
             talent_ids: Interner::new(),
+            buff_ids: Interner::new(),
             aiming: BTreeMap::new(),
             costs: BTreeMap::new(),
             talent_trees: BTreeMap::new(),
@@ -682,6 +722,10 @@ impl ClientHost {
         // Talents, for the one binding that yields a list of them (server#68).
         for name in &reg.names.talents {
             self.talent_ids.intern(name);
+        }
+        // Buffs, for the statuses a unit carries on the wire (server#171).
+        for name in &reg.names.buffs {
+            self.buff_ids.intern(name);
         }
         // The families a HUD binding names, interned in the same order adoption
         // interns them so the client's ids match the server's (server#67).
@@ -972,6 +1016,13 @@ impl ClientHost {
         })
     }
 
+    /// Every adopted status look keyed by the **global `BuffId`** a unit's
+    /// statuses carry on the wire (server#171). A look for a buff no loaded gameplay
+    /// mod declares is skipped, exactly like [`effects_by_id`](Self::effects_by_id).
+    pub fn status_looks_by_id(&self) -> impl Iterator<Item = (BuffId, &StatusLook)> {
+        self.statuses.iter().filter_map(|(name, look)| Some((self.buff_ids.get(name)?, look)))
+    }
+
     /// Every adopted ability icon keyed by the **global `AbilityId`** the wire
     /// carries, the picture an interface draws for whichever slot binds that
     /// ability (server#94). An icon for an ability no loaded gameplay mod defines
@@ -1066,6 +1117,10 @@ impl ClientHost {
         // other here — the merge is a union, not a race.
         for (key, effect) in adopted.named_effects() {
             self.notify_effects.insert(key.clone(), effect.clone());
+        }
+        // A later mod's look for a status replaces an earlier one whole.
+        for (buff, look) in adopted.status_looks() {
+            self.statuses.insert(buff.clone(), look.clone());
         }
         // Interfaces are appended, never merged: two mods each declaring a HUD
         // both get one, and a later mod cannot silently replace an earlier one's

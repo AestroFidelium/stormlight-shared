@@ -26,6 +26,7 @@ pub mod quantize;
 pub mod roster;
 pub mod slots;
 pub mod stacks;
+pub mod statuses;
 pub mod stress;
 pub mod swing;
 pub mod talents;

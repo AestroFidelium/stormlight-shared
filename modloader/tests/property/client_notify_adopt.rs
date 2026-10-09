@@ -142,9 +142,7 @@ fn build(s: &Scenario) -> Built {
                 ..Names::default()
             },
             animations: vec![an_animation(0, notifies)],
-            named_effects: (0..keys)
-                .map(|k| named(&format!("fx{k}"), a_model(k)))
-                .collect(),
+            named_effects: (0..keys).map(|k| named(&format!("fx{k}"), a_model(k))).collect(),
             ..ClientRegistration::default()
         },
         keys,
