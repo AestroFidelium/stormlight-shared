@@ -84,13 +84,19 @@ pub struct TaskPaid {
     pub rungs: u32,
     /// Whether the shortcut has fired. The half no count can be read for.
     pub shortcut: bool,
+    /// Whether the shortcut would fire if the task's counter moved **now**
+    /// (stormlight/server#185) — the one fact here about the present rather than the
+    /// past. Evaluated by the same pass that fires it, so "it said open and did not
+    /// fire" is not something the wire can say.
+    pub window: bool,
 }
 
 /// A unit's paid task records, in the server's (deterministic, key-ordered) order.
 ///
 /// Present on the owner's view entity only while that owner's unit has actually been
-/// paid something, so its presence is precisely "there is progress here worth
-/// reading". A task nobody has been paid a rung of is **absent**, and an interface
+/// paid something or has a shortcut window open, so its presence is precisely "there
+/// is something here worth reading". A task nobody has been paid a rung of, and whose
+/// shortcut is closed, is **absent**, and an interface
 /// reads that as a task at the start rather than as no task at all — which one it is
 /// comes from the declaration, which the client already holds.
 #[derive(Component, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -119,6 +125,14 @@ impl ReplicatedTasks {
     #[must_use]
     pub fn shortcut(&self, task: TaskRef) -> bool {
         self.get(task).is_some_and(|paid| paid.shortcut)
+    }
+
+    /// Whether one task's shortcut window is open (stormlight/server#185). A task
+    /// with no entry reads **closed**: the server publishes an entry for every task
+    /// whose window it has opened.
+    #[must_use]
+    pub fn window(&self, task: TaskRef) -> bool {
+        self.get(task).is_some_and(|paid| paid.window)
     }
 }
 
