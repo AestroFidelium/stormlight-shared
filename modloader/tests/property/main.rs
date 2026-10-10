@@ -15,6 +15,7 @@ mod client_effect_life;
 mod client_environment_adopt;
 mod client_icon_adopt;
 mod client_notify_adopt;
+mod client_particles_adopt;
 mod client_scenery_adopt;
 mod client_shadow_adopt;
 mod client_sound_adopt;
